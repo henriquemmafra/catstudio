@@ -1,0 +1,50 @@
+name: E2E Testing
+on:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    name: E2E Testing on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    env:
+      DOWNLOAD_TIMEOUT: 90000
+      VITE_SHOW_SAMPLE_DATA: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Cache test datasets
+        uses: actions/cache@v4
+        with:
+          path: .tmp/datasets
+          key: e2e-datasets-${{ hashFiles('tests/datasets.ts') }}
+          restore-keys: e2e-datasets-
+      - name: Run E2E on chrome (linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY npm run test:e2e:chrome
+      - name: Set screen resolution (windows)
+        if: matrix.os == 'windows-latest'
+        run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
+        shell: pwsh
+      - name: Run E2E on chrome (non-linux)
+        if: matrix.os != 'ubuntu-latest'
+        run: npm run test:e2e:chrome
+      - name: Archive test results
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: image_comparison_results_${{ matrix.os }}
+          path: .tmp/runs
+          retention-days: 5

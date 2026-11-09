@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\.{1,2}$)"
+    },
+    "log": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "referenceImageParameter": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "jobId",
+    "log",
+    "parameters"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,51 @@
+name: Checks and Tests
+on:
+  pull_request:
+  merge_group:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    name: Code check and tests
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Enforce code style
+        run: npx prettier --list-different "src/**/*.[jt]s" "tests/**/*.[jt]s" "src/**/*.vue"
+      - name: Lint
+        run: npm run lint
+      - name: Quality ratchets
+        # A file may not get worse than it is on the pull request's target branch.
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin \
+            "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          node scripts/checks/check.mjs --base "origin/$BASE_REF"
+      - name: Tests
+        run: npm test
+
+  commitlint:
+    runs-on: ubuntu-latest
+    name: Lint commit messages
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate PR commits with commitlint
+        run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
