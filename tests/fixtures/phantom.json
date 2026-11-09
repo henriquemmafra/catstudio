@@ -1,0 +1,15 @@
+{
+  "_comment": "Fantoma analítico do tórax usado nos testes do CatStudio. Coordenadas do paciente em LPS (mm): +x = esquerda, +y = posterior, +z = superior. Bordas suavizadas (sigmoide) para que amostragens em grades diferentes sejam comparáveis.",
+  "air": -1000,
+  "edge_mm": 0.8,
+  "objects": [
+    { "name": "body", "type": "ellipcyl", "center": [0, 0, 0], "semi": [150, 110], "half_height": 130, "hu": 40 },
+    { "name": "lung_R", "type": "ellipsoid", "center": [-70, 0, 0], "semi": [55, 75, 105], "hu": -850 },
+    { "name": "lung_L", "type": "ellipsoid", "center": [70, 0, 0], "semi": [55, 75, 105], "hu": -850 },
+    { "name": "spine", "type": "ellipcyl", "center": [0, 85, 0], "semi": [18, 18], "half_height": 130, "hu": 700 },
+    { "name": "marker_L", "type": "ellipsoid", "center": [90, -20, 40], "semi": [12, 12, 12], "hu": 1000 },
+    { "name": "marker_A", "type": "ellipsoid", "center": [0, -95, -30], "semi": [10, 10, 10], "hu": 300 },
+    { "name": "cube_RPS", "type": "box", "center": [-60, 30, 70], "half": [10, 10, 10], "hu": 500 },
+    { "name": "ellipsoid_E", "type": "ellipsoid", "center": [-80, -10, -50], "semi": [25, 12, 35], "hu": 200 }
+  ]
+}
