@@ -7,6 +7,8 @@ import {
 } from '@itk-wasm/dicom';
 
 import itkConfig from '@/src/io/itk/itkConfig';
+import { refineVolumes } from '@/src/catstudio/geometry';
+import { reportGeometryNotes } from '@/src/catstudio/notes';
 import { getWorker } from '@/src/io/itk/worker';
 
 export interface TagSpec {
@@ -115,7 +117,17 @@ export async function splitAndSort<T>(
     ])
   );
 
-  return volumeToInstances;
+  // CatStudio: separa pilhas que o agrupamento por série mistura (matrizes
+  // diferentes, aquisições repetidas, cópias exatas) e ordena pela normal.
+  return refineVolumes(
+    volumeToInstances,
+    (inst) => {
+      const metadata = (inst as { metadata?: Iterable<[string, string]> | null })
+        ?.metadata;
+      return metadata ? new Map(metadata) : null;
+    },
+    reportGeometryNotes
+  );
 }
 
 /**

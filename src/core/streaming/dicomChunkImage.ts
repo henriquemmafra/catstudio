@@ -37,6 +37,9 @@ import { convertItkToVtkImage } from '@/src/io/convertItkToVtkImage';
 import { unitToMm } from '@/src/core/streaming/dicom/ultrasoundRegion';
 import { isUsableSpacing } from '@/src/utils/imageSpace';
 import { surfaceWarning } from '@/src/store/messages';
+import { regularizeChunks } from '@/src/catstudio/regularImage';
+import type { StackResampler } from '@/src/catstudio/resampler';
+import { reportGeometryNotes } from '@/src/catstudio/notes';
 
 const { fastComputeRange } = vtkDataArray;
 
@@ -146,6 +149,9 @@ export default class DicomChunkImage
   private chunkStatus: ChunkStatus[];
   private allocationGeneration: number;
   private chunkAdditionQueue: Promise<void>;
+  // CatStudio: reamostragem para grade regular (tilt, lacunas, multi-frame)
+  private resampler: StackResampler | null = null;
+  private resampleFill: number | null = null;
 
   public segBuildInfo:
     | (JsonCompatible & ReadOverlappingSegmentationMeta)
@@ -372,7 +378,18 @@ export default class DicomChunkImage
     // Allocation can throw, and the cache keeps this image either way, so the
     // old buffer is only safe to release once its replacement exists.
     const previous = this.vtkImageData.value;
-    this.vtkImageData.value = allocateImageFromChunks(this.chunks);
+    this.resampler = null;
+    this.resampleFill = null;
+    const outcome = regularizeChunks(this.chunks);
+    if (outcome?.notes.length)
+      reportGeometryNotes(outcome.key, outcome.notes, outcome.label, this.warn);
+    if (outcome?.regular) {
+      this.vtkImageData.value = outcome.regular.image;
+      this.resampler = outcome.regular.resampler;
+      this.resampleFill = outcome.regular.padded ? outcome.regular.fill : null;
+    } else {
+      this.vtkImageData.value = allocateImageFromChunks(this.chunks);
+    }
     previous.delete();
     this.applyUltrasoundSpacing();
   }
@@ -553,6 +570,11 @@ export default class DicomChunkImage
     const where = `File ${chunkId} (chunk ${sliceIndex})`;
     this.assertSingleFramePerFile(result.image.size[2], where);
 
+    if (this.resampler) {
+      this.onResampledChunkData(chunk, sliceIndex, result.image, where);
+      return;
+    }
+
     const scalars = this.vtkImageData.value.getPointData().getScalars();
     const pixelData = scalars.getData();
     const componentCount = scalars.getNumberOfComponents();
@@ -602,6 +624,78 @@ export default class DicomChunkImage
     });
     this.onChunksUpdated();
 
+    this.vtkImageData.value.modified();
+  }
+
+  // CatStudio: o corte decodificado alimenta o reamostrador, que calcula as
+  // fatias da grade regular cujos cortes vizinhos já chegaram.
+  private onResampledChunkData(
+    chunk: Chunk,
+    sliceIndex: number,
+    image: DecodedChunkImage,
+    where: string
+  ) {
+    const resampler = this.resampler!;
+    const { rows, cols, count, dims } = resampler.plan;
+    const multiFrame = this.chunks.length === 1;
+    const frames = image.size[2] ?? 1;
+    if (
+      image.size[0] !== cols ||
+      image.size[1] !== rows ||
+      frames !== (multiFrame ? count : 1) ||
+      image.imageType.components !== 1
+    ) {
+      throw new Error(
+        `${where} decoded to ${image.size.join('x')} with ${image.imageType.components} component(s), ` +
+          `but its geometry declares ${cols}x${rows}x${multiFrame ? count : 1} with 1 component.`
+      );
+    }
+    const data = image.data as TypedArray;
+    const { min, max } = fastComputeRange(data, 0, 1);
+    const scalars = this.vtkImageData.value.getPointData().getScalars();
+    assertSamplesRepresentable(data, { min, max }, scalars.getData(), where);
+
+    let lo = Infinity;
+    let hi = -Infinity;
+    const take = (range: [number, number] | null) => {
+      if (!range) return;
+      lo = Math.min(lo, range[0]);
+      hi = Math.max(hi, range[1]);
+    };
+    if (multiFrame) {
+      const size = rows * cols;
+      for (let f = 0; f < count; f++)
+        take(resampler.addSource(f, data.subarray(f * size, (f + 1) * size)));
+    } else {
+      take(resampler.addSource(sliceIndex, data));
+    }
+
+    const rangeAlreadyInitialized = this.chunkStatus.some(
+      (status) => status === ChunkStatus.Loaded
+    );
+    let newMin = min;
+    let newMax = max;
+    if (this.resampleFill !== null) {
+      newMin = Math.min(newMin, this.resampleFill);
+      newMax = Math.max(newMax, this.resampleFill);
+    }
+    if (rangeAlreadyInitialized) {
+      const cur = scalars.getRange(0);
+      newMin = Math.min(newMin, cur[0]);
+      newMax = Math.max(newMax, cur[1]);
+    }
+    scalars.setRange({ min: newMin, max: newMax }, 0);
+    scalars.modified();
+    chunk.setUserData(DATA_RANGE_KEY, [[min, max]]);
+
+    this.chunkStatus[sliceIndex] = ChunkStatus.Loaded;
+    if (lo <= hi) {
+      this.events.emit('chunkLoad', {
+        chunk,
+        updatedExtent: [0, dims[0] - 1, 0, dims[1] - 1, lo, hi],
+      });
+    }
+    this.onChunksUpdated();
     this.vtkImageData.value.modified();
   }
 

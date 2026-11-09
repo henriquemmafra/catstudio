@@ -3,6 +3,7 @@ import { MetaLoader } from '@/src/core/streaming/types';
 import { Maybe } from '@/src/types';
 import { Tags } from '@/src/core/dicomTags';
 import { augmentOCTMetadata } from '@/src/core/streaming/dicom/octMetadata';
+import { augmentEnhancedMetadata } from '@/src/catstudio/enhanced';
 import {
   parseUltrasoundRegionFromBlob,
   UltrasoundRegions,
@@ -34,6 +35,8 @@ export class DicomFileMetaLoader implements MetaLoader {
       this.file,
       await this.readDicomTags(this.file)
     );
+    // CatStudio: geometria por quadro de multi-frame enhanced (CT/MR/PET)
+    this.tags = await augmentEnhancedMetadata(this.file, this.tags);
 
     const modality = new Map(this.tags).get(Tags.Modality)?.trim();
     if (modality === 'US') {
