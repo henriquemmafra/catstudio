@@ -97,7 +97,15 @@
           function (e) {
             var t = e.target;
             if (t && t !== window && (t.src || t.href)) {
-              show('Falha ao baixar ' + String(t.src || t.href).split('/').pop());
+              var file = String(t.src || t.href).split('/').pop();
+              if (file === 'main.ts') {
+                show(
+                  'Falha ao baixar main.ts: o site está publicando o código-fonte (branch main) ' +
+                    'em vez do build. No GitHub: Settings → Pages → Branch: gh-pages, pasta / (root) → Save.'
+                );
+              } else {
+                show('Falha ao baixar ' + file);
+              }
             } else {
               show(
                 (e.message || 'Erro') +
