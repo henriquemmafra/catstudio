@@ -139,18 +139,43 @@ class Session:
         fc.value.set_files(folder)
         self.wait_loaded()
 
-    def wait_loaded(self, timeout=180):
+    def state(self):
+        return self.page.evaluate(f"""() => {{ const p = {PINIA}; const c = p._s.get('image-cache');
+            const shown = new Set(Object.values(p._s.get('view').viewByID).map(v => v.dataID).filter(Boolean));
+            return [...c.imageIds].map(i => ({{id: i, shown: shown.has(i), st: c.imageStatus[i], ld: !!c.imageLoading[i]}})); }}""")
+
+    def wait_loaded(self, timeout=180, everything=False):
+        """Espera os volumes exibidos (ou todos) terminarem de carregar."""
         t0 = time.time()
         while time.time() - t0 < timeout:
-            st = self.page.evaluate(f"""() => {{ const c = {PINIA}._s.get('image-cache');
-                return {{ids: [...c.imageIds], st: {{...c.imageStatus}}, ld: {{...c.imageLoading}}}}; }}""")
-            if st["ids"] and all(st["st"].get(i) == "complete" and not st["ld"].get(i) for i in st["ids"]):
-                self.page.wait_for_timeout(1500)
+            st = [x for x in self.state() if everything or x["shown"]]
+            if st and all(x["st"] == "complete" and not x["ld"] for x in st):
+                self.wait_idle()
                 return
             self.page.wait_for_timeout(400)
         raise AssertionError("o volume não terminou de carregar")
 
+    def wait_idle(self, timeout=180):
+        """Espera a página ficar responsiva (WebGL por software é lento: logo
+        depois de carregar, a renderização 3D e as miniaturas dos presets
+        ocupam a thread principal por dezenas de segundos)."""
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            frames = self.page.evaluate("""() => new Promise(res => { let n = 0; const t0 = performance.now();
+                const f = () => { n++; if (performance.now() - t0 < 1000) requestAnimationFrame(f); else res(n); };
+                requestAnimationFrame(f); })""")
+            if frames >= 20:
+                return
+        raise AssertionError("a página não ficou responsiva")
+
+    def load_all(self):
+        """Carrega também as séries não exibidas (o CatStudio carrega sob demanda)."""
+        self.page.evaluate(f"""() => {{ const c = {PINIA}._s.get('image-cache');
+            Object.values(c.imageById).forEach(im => im.startLoad && im.startLoad()); }}""")
+        self.wait_loaded(everything=True)
+
     def volumes(self, samples=8000):
+        self.load_all()
         return self.page.evaluate(EXTRACT, samples)
 
     def messages(self):
@@ -302,4 +327,49 @@ def test_renderizacao_3d_e_exportacao_png(session, tmp_path):
     d.save_as(path)
     std, shape = _image_std(path.read_bytes())
     assert std > 5 and shape[0] > 100 and shape[1] > 100
+    assert not session.errors, session.errors
+
+
+# ------------------------------------------------------------------ memória
+
+BIG = os.path.join(DATA, "exame_grande")
+
+
+@pytest.mark.skipif(not os.path.isdir(BIG), reason="rode make_exame_grande.py para gerar o exame completo")
+def test_exame_completo_so_carrega_a_serie_exibida(session):
+    """Pasta com 7 séries (~2000 imagens, ~1 GB): o VolView original derrubava a
+    aba por falta de memória. Aqui só a série exibida é carregada, e trocar de
+    série libera a anterior."""
+    page = session.page
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Performance.enable")
+    heap = []
+
+    def sample():
+        m = {x["name"]: x["value"] for x in cdp.send("Performance.getMetrics")["metrics"]}
+        heap.append(m.get("JSHeapUsedSize", 0) / 1048576)
+
+    with page.expect_file_chooser() as fc:
+        page.get_by_test_id("welcome-open-folder").click()
+    fc.value.set_files(BIG)
+    t0 = time.time()
+    while not session.state() and time.time() - t0 < 120:
+        sample()
+        page.wait_for_timeout(500)
+    session.wait_loaded(timeout=400)
+    st = session.state()
+    assert len(st) == 7
+    assert sum(x["st"] == "complete" for x in st) == 1, st
+    assert max(heap) < 400, f"heap JS chegou a {max(heap):.0f} MB na importação"
+    first = next(x["id"] for x in st if x["shown"])
+    # trocar de série: a nova vai para todas as vistas e a anterior sai da memória
+    # WebGL por software: trocar a série re-renderiza tudo e trava a página por um tempo
+    page.locator(".volume-card:not(.volume-card-active)").first.click(timeout=300000)
+    page.wait_for_timeout(2000)
+    session.wait_loaded(timeout=400)
+    st = {x["id"]: x for x in session.state()}
+    shown = [i for i, x in st.items() if x["shown"]]
+    assert len(shown) == 1 and shown[0] != first, shown
+    assert st[first]["st"] == "incomplete"
+    assert sum(x["st"] == "complete" for x in st.values()) == 1
     assert not session.errors, session.errors

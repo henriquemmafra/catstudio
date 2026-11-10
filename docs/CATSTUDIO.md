@@ -77,7 +77,33 @@ Como funciona:
 - **Fora do escopo**: OCT/oftalmologia, ultrassom e projeções (DX, CR, MG,
   XA…) seguem as regras próprias do VolView.
 
-### 2. Privacidade (`src/catstudio/privacy.ts`)
+### 2. Memória (`src/catstudio/memory.ts`, `lazy.ts`, `io.ts`)
+
+Abrir a pasta de um exame completo derrubava a aba ("Out of Memory"). Num
+exame sintético com 7 séries 512×512 (1980 imagens, 1 GB), o VolView
+original passava de 3,6 GB e caía em ~15 s. Três causas, todas corrigidas:
+
+- **Todas as séries carregavam ao mesmo tempo.** Agora só carregam os
+  volumes exibidos em alguma vista (e camadas sobre eles); ao trocar de
+  série, a anterior é liberada e volta a ser lida dos arquivos se for aberta
+  de novo. Clicar numa série a abre em todas as vistas.
+- **A importação copiava cada arquivo inteiro** para o WebAssembly (tags e
+  agrupamento por série). Agora as tags vêm só do cabeçalho (64 KB, com
+  recuo automático para o arquivo inteiro se faltar algo) e as séries de
+  CT/MR/PET são agrupadas em JavaScript a partir dessas tags, com os mesmos
+  critérios do ITK.
+- **A fila de importação era quadrática** (um `Promise.race` sobre todos os
+  pendentes a cada arquivo concluído: ~1 GB de promessas com 2000 arquivos).
+  Virou uma fila linear.
+- Bônus: o histograma da janela automática copiava o volume inteiro para um
+  worker e era calculado até para séries ainda vazias; agora usa uma
+  amostra de até 4 milhões de voxels e espera o volume completo.
+
+Resultado no mesmo exame (Chrome headless, WebGL por software): sem queda,
+heap JavaScript < 50 MB na importação (antes 1,1 GB), processo da página em
+~1 GB com a série de 400 cortes aberta, importação de ~60 s para ~6 s.
+
+### 3. Privacidade (`src/catstudio/privacy.ts`)
 
 - Na entrada do banco de dados DICOM do VolView, nome, ID e data de
   nascimento viram "Paciente N" (pseudônimo válido só na aba); StudyID e
@@ -88,7 +114,7 @@ Como funciona:
   que a página não faz nenhuma requisição fora do próprio site.
 - Exportação PNG da vista 3D só com o conteúdo renderizado (sem textos).
 
-### 3. Interface
+### 4. Interface
 
 Logo e nome CatStudio; tela inicial com "Abrir pasta do exame" (seletor de
 pasta, subpastas incluídas) e "Abrir arquivos"; abas, ferramentas, layouts,

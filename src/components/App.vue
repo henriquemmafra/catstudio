@@ -82,6 +82,7 @@ import {
 import { defaultImageMetadata } from '@/src/core/progressiveImage';
 import VtkRenderWindowParent from '@/src/components/vtk/VtkRenderWindowParent.vue';
 import { useSyncWindowing } from '@/src/composables/useSyncWindowing';
+import { useMemoryPolicy } from '@/src/catstudio/memory';
 import { readLaunchParams } from '@/src/utils/urlParams';
 
 export default defineComponent({
@@ -104,6 +105,8 @@ export default defineComponent({
     const dicomStore = useDICOMStore();
 
     useGlobalErrorHook();
+    // CatStudio: só os volumes exibidos ficam na memória
+    useMemoryPolicy();
     useKeyboardShortcuts();
 
     // --- sync handling --- //

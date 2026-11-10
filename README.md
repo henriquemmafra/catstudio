@@ -45,6 +45,9 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
   No VolView original esses casos saíam errados sem aviso (o tilt deslocava
   um marcador do fantoma em 35 mm). Detalhes e números em
   [docs/CATSTUDIO.md](docs/CATSTUDIO.md).
+- **Memória**: abre a pasta de um exame completo sem derrubar a aba — só a
+  série exibida fica na memória (o VolView original carregava todas e caía
+  com ~2000 imagens).
 - **Privacidade**: nome, ID e nascimento do paciente nunca aparecem (viram
   "Paciente 1"); sem telemetria, dados de exemplo ou serviços remotos; o
   teste automatizado falha se a página fizer qualquer requisição externa.
@@ -55,7 +58,7 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
 
 Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
 
-- **21 testes ponta a ponta no navegador** (`catstudio-testes/`): upload
+- **22 testes ponta a ponta no navegador** (`catstudio-testes/`): upload
   real pelos seletores de arquivo e de pasta, volume lido da aplicação e
   comparado voxel a voxel com um fantoma analítico — axial com pixel
   anisotrópico, implicit VR com sinal, aquisição coronal, oblíqua dupla,
@@ -64,7 +67,10 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   codecs (JPEG 2000 com/sem sinal, JPEG-LS, RLE, JPEG Lossless, Deflate,
   Big Endian), .zip com vários estudos; identificação do paciente ausente
   da página (inclusive no popup de informações DICOM); renderização 3D não
-  vazia e PNG exportado; nenhuma requisição externa.
+  vazia e PNG exportado; nenhuma requisição externa; e um exame completo
+  sintético (7 séries 512×512, ~2000 imagens, 1 GB) aberto pela pasta sem
+  derrubar a aba, com só a série exibida na memória e a anterior liberada
+  ao trocar de série.
 - **Testes unitários**: 9 do módulo de geometria (campo linear reproduzido
   exatamente após reamostrar tilt, lacuna, irregular e quadros fora de
   ordem; liberação de memória) dentro da suíte completa do projeto (2448
@@ -92,6 +98,7 @@ Testes:
 npx vitest run src/catstudio                     # unitários do CatStudio
 pip install -r catstudio-testes/requirements.txt
 python3 catstudio-testes/make_fixtures.py        # gera os fantomas DICOM
+python3 catstudio-testes/make_exame_grande.py    # opcional: exame de ~1 GB (teste de memória)
 python3 -m pytest catstudio-testes -v            # ponta a ponta (usa dist/)
 CATSTUDIO_URL=https://henriquemmafra.github.io/catstudio/ python3 -m pytest catstudio-testes
 ```

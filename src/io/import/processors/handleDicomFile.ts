@@ -8,6 +8,7 @@ import { getWorker } from '@/src/io/itk/worker';
 import { FILE_EXT_TO_MIME } from '@/src/io/mimeTypes';
 import { getErrorDetail } from '@/src/utils';
 import { readDicomTags } from '@itk-wasm/dicom';
+import { readTagsFromHeader } from '@/src/catstudio/io';
 
 /**
  * Adds DICOM files to the extra context.
@@ -24,8 +25,11 @@ const handleDicomFile: ImportHandler = async (dataSource) => {
 
   const readTags: ReadDicomTagsFunction = async (file) => {
     try {
-      const result = await readDicomTags(file, { webWorker: getWorker() });
-      return result.tags;
+      // CatStudio: lê só o cabeçalho (o original lia o arquivo inteiro)
+      return await readTagsFromHeader(file, async (blob) => {
+        const result = await readDicomTags(blob, { webWorker: getWorker() });
+        return result.tags;
+      });
     } catch (error) {
       const detail = getErrorDetail(
         error,

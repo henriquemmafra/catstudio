@@ -152,6 +152,8 @@ export default class DicomChunkImage
   // CatStudio: reamostragem para grade regular (tilt, lacunas, multi-frame)
   private resampler: StackResampler | null = null;
   private resampleFill: number | null = null;
+  // CatStudio: memória — só carrega quando exibido (ver catstudio/memory.ts)
+  private requested = false;
 
   public segBuildInfo:
     | (JsonCompatible & ReadOverlappingSegmentationMeta)
@@ -232,13 +234,45 @@ export default class DicomChunkImage
     this.thumbnailCache = new WeakMap();
   }
 
+  /** CatStudio: carregado sob demanda (exceto SEG, que monta segmentações). */
+  get catstudioLazy() {
+    return this.chunks.length > 0 && this.getModality() !== 'SEG';
+  }
+
   startLoad() {
+    this.requested = true;
     if (this.chunkStatus.every((status) => status === ChunkStatus.Loaded))
       return;
+    // CatStudio: cortes cujos dados já estão disponíveis mas que saíram da
+    // memória (unloadData) são decodificados de novo.
+    this.chunks.forEach((chunk, index) => {
+      if (
+        chunk.state === ChunkState.Loaded &&
+        this.chunkStatus[index] === ChunkStatus.NotLoaded
+      ) {
+        this.chunkStatus[index] = ChunkStatus.Loading;
+        this.decodeChunk(chunk);
+      }
+    });
     this.chunks.forEach((chunk) => {
       chunk.loadData();
     });
     this.events.emit('loading', true);
+  }
+
+  /**
+   * CatStudio: libera os voxels de um volume que não está sendo exibido. Os
+   * arquivos continuam disponíveis; ao exibir de novo, startLoad decodifica.
+   */
+  unloadData() {
+    if (!this.requested || !this.catstudioLazy) return;
+    this.requested = false;
+    this.chunks.forEach((chunk) => chunk.stopLoad());
+    this.allocationGeneration += 1;
+    this.chunkStatus = this.chunkStatus.map(() => ChunkStatus.NotLoaded);
+    this.reallocateImage();
+    this.events.emit('status', this.computeStatus());
+    this.events.emit('loading', false);
   }
 
   stopLoad() {
@@ -321,6 +355,8 @@ export default class DicomChunkImage
     const chunk = this.chunks[middle];
 
     if (!this.thumbnailCache.has(chunk)) {
+      // CatStudio: com carregamento sob demanda, a miniatura pede só este corte
+      chunk.loadData();
       // FIXME(fli): if chunk changes, the old promise is not cancelled
       this.thumbnailCache.set(
         chunk,

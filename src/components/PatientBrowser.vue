@@ -69,7 +69,9 @@ export default defineComponent({
     };
 
     function setViewImage(imageID: string) {
-      viewStore.setDataForActiveView(imageID);
+      // CatStudio: a série escolhida vai para todas as vistas (como no PACS);
+      // a anterior sai da memória (catstudio/memory.ts)
+      viewStore.setDataForAllViews(imageID);
     }
 
     return {

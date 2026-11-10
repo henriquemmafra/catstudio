@@ -7,7 +7,11 @@ import {
 } from '@itk-wasm/dicom';
 
 import itkConfig from '@/src/io/itk/itkConfig';
-import { refineVolumes } from '@/src/catstudio/geometry';
+import {
+  groupByMetadata,
+  refineVolumes,
+  seriesLabel,
+} from '@/src/catstudio/geometry';
 import { reportGeometryNotes } from '@/src/catstudio/notes';
 import { getWorker } from '@/src/io/itk/worker';
 
@@ -77,6 +81,60 @@ export async function splitAndSort<T>(
   instances: T[],
   mapToBlob: (inst: T, index: number) => Blob
 ) {
+  const metaOf = (inst: T) => {
+    const metadata = (inst as { metadata?: Iterable<[string, string]> | null })
+      ?.metadata;
+    return metadata ? new Map(metadata) : null;
+  };
+
+  // CatStudio: séries com metadados já lidos são agrupadas sem reler os
+  // arquivos; só o restante passa pelo agrupamento original em WebAssembly.
+  const { volumes, rest } = groupByMetadata(instances, metaOf);
+  reportSeriesSplits(volumes, metaOf);
+  const volumeToInstances: Record<string, T[]> = { ...volumes };
+  if (rest.length) {
+    const others = await splitAndSortWasm(
+      rest.map((index) => instances[index]),
+      (inst, i) => mapToBlob(inst, rest[i])
+    );
+    Object.assign(volumeToInstances, others);
+  }
+
+  // CatStudio: separa pilhas que o agrupamento por série mistura (matrizes
+  // diferentes, aquisições repetidas, cópias exatas) e ordena pela normal.
+  return refineVolumes(volumeToInstances, metaOf, reportGeometryNotes);
+}
+
+/** CatStudio: avisa quando uma mesma série virou mais de um volume. */
+function reportSeriesSplits<T>(
+  volumes: Record<string, T[]>,
+  metaOf: (inst: T) => Map<string, string> | null
+) {
+  const bySeries = new Map<string, string[]>();
+  Object.keys(volumes).forEach((key) => {
+    const series = key.slice(0, key.lastIndexOf('.'));
+    bySeries.set(series, [...(bySeries.get(series) ?? []), key]);
+  });
+  bySeries.forEach((keys, series) => {
+    if (keys.length < 2) return;
+    const meta = metaOf(volumes[keys[0]][0]);
+    reportGeometryNotes(
+      series,
+      [
+        {
+          title: 'Série dividida em volumes',
+          detail: `A série mistura ${keys.length} combinações de matriz, espessura ou número de série; cada combinação virou um volume separado.`,
+        },
+      ],
+      meta ? seriesLabel(meta) : 'Série'
+    );
+  });
+}
+
+async function splitAndSortWasm<T>(
+  instances: T[],
+  mapToBlob: (inst: T, index: number) => Blob
+) {
   const inputs = await Promise.all(
     instances.map(async (instance, index) => {
       const blob = mapToBlob(instance, index);
@@ -109,25 +167,13 @@ export async function splitAndSort<T>(
     (result.outputs[0].data as TextStream).data
   ) as VolumesToFileNamesMap;
 
-  const volumeToInstances = Object.fromEntries(
+  return Object.fromEntries(
     Object.entries(volumeToFileIndexes).map(([volumeKey, fileIndexes]) => [
       volumeKey,
       // file indexes to Files
       fileIndexes.map((fileIndex) => instances[parseInt(fileIndex, 10)]),
     ])
-  );
-
-  // CatStudio: separa pilhas que o agrupamento por série mistura (matrizes
-  // diferentes, aquisições repetidas, cópias exatas) e ordena pela normal.
-  return refineVolumes(
-    volumeToInstances,
-    (inst) => {
-      const metadata = (inst as { metadata?: Iterable<[string, string]> | null })
-        ?.metadata;
-      return metadata ? new Map(metadata) : null;
-    },
-    reportGeometryNotes
-  );
+  ) as Record<string, T[]>;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { isLazyImage, memoryPolicy } from '@/src/catstudio/lazy';
 import {
   LoadedVtkImage,
   ProgressiveImage,
@@ -103,7 +104,8 @@ export const useImageCacheStore = defineStore('image-cache', () => {
     imageIds.value.push(id);
 
     registerListeners(id);
-    data.startLoad();
+    // CatStudio: volumes DICOM só carregam quando exibidos (catstudio/memory.ts)
+    if (!(memoryPolicy.active && isLazyImage(data))) data.startLoad();
     return id;
   }
 

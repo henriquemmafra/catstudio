@@ -49,6 +49,16 @@ function getAllComponentRange(scalars: vtkDataArray) {
   return { min, max };
 }
 
+const HISTOGRAM_MAX_SAMPLES = 4_000_000;
+
+function sampleForHistogram(data: ArrayLike<number>) {
+  if (data.length <= HISTOGRAM_MAX_SAMPLES) return data;
+  const stride = Math.ceil(data.length / HISTOGRAM_MAX_SAMPLES);
+  const out = new Float32Array(Math.ceil(data.length / stride));
+  for (let i = 0, j = 0; i < data.length; i += stride, j += 1) out[j] = data[i];
+  return out;
+}
+
 async function computeAutoRangeValues(imageData: vtkImageData) {
   const scalars = imageData.getPointData()?.getScalars();
   if (!scalars) {
@@ -56,7 +66,10 @@ async function computeAutoRangeValues(imageData: vtkImageData) {
   }
 
   const { min, max } = getAllComponentRange(scalars);
-  const scalarData = scalars.getData();
+  // CatStudio: o histograma usa uma amostra (≤ 4 milhões de voxels) em vez de
+  // copiar o volume inteiro para um worker — essa cópia dobrava a memória de
+  // cada série aberta.
+  const scalarData = sampleForHistogram(scalars.getData());
   const worker = new Worker(
     new URL('@/src/utils/histogram.worker.ts', import.meta.url),
     { type: 'module' }
@@ -172,11 +185,17 @@ export const useImageStatsStore = defineStore('image-stats', () => {
         });
     };
 
+    // CatStudio: só calcula com o volume completo (com carregamento sob
+    // demanda, um volume não exibido não está "carregando" mas está vazio).
+    const isComplete = computed(
+      () => imageCacheStore.imageStatus[id] !== 'incomplete'
+    );
     watch(
-      [imageData, isImageLoading],
+      [imageData, isImageLoading, isComplete],
       () => {
         if (
           isImageLoading.value ||
+          !isComplete.value ||
           !imageData.value ||
           id in autoRangeComputations ||
           (stats[id] && stats[id].autoRangeValues)

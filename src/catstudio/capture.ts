@@ -12,7 +12,8 @@ function stamp() {
 }
 
 export async function captureViewPNG(view: VtkViewApi, kind = '3d') {
-  view.requestRender({ immediate: true });
+  // O canvas da vista guarda o último quadro renderizado; capturar direto evita
+  // uma nova renderização cinematográfica (lenta em GPU fraca).
   const canvas = view.renderWindowView.getCanvas() as HTMLCanvasElement | null;
   if (!canvas) throw new Error('Vista sem canvas para capturar');
   const blob = await new Promise<Blob | null>((resolve) =>

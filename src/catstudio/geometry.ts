@@ -321,6 +321,67 @@ export function refineVolumes<T>(
   return out;
 }
 
+// ------------------------------------------------------------ agrupamento
+
+function fnv1a(text: string) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * Agrupa por série usando as tags já lidas, sem reler os arquivos — o
+ * agrupamento original do VolView copiava todos os arquivos inteiros para o
+ * WebAssembly de uma vez. Usa os mesmos critérios do ITK (UID da série,
+ * número, sequência, espessura, matriz, data); a separação fina vem depois
+ * em refineVolumes. Instâncias sem metadados, sem imagem ou de modalidades
+ * com regras próprias do VolView ficam em `rest` para o caminho original.
+ */
+export function groupByMetadata<T>(
+  instances: T[],
+  metaOf: (item: T) => Meta | null | undefined
+): { volumes: Record<string, T[]>; rest: number[] } {
+  const volumes: Record<string, T[]> = {};
+  const order = new Map<T, number>();
+  const rest: number[] = [];
+  instances.forEach((inst, index) => {
+    const meta = metaOf(inst);
+    const series = meta?.get('0020|000e')?.trim();
+    const rows = Number(meta?.get(CT.Rows) ?? 0);
+    const cols = Number(meta?.get(CT.Columns) ?? 0);
+    if (
+      !meta ||
+      !series ||
+      !(rows > 0) ||
+      !(cols > 0) ||
+      !geometryManaged(meta)
+    ) {
+      rest.push(index);
+      return;
+    }
+    const details = [
+      '0020|0011',
+      '0018|0024',
+      '0018|0050',
+      CT.Rows,
+      CT.Columns,
+      '0008|0021',
+    ]
+      .map((tag) => (meta.get(tag) ?? '').trim())
+      .join('|');
+    const key = `${series}.${fnv1a(details)}`;
+    (volumes[key] ??= []).push(inst);
+    order.set(inst, Number(meta.get(CT.InstanceNumber) ?? index));
+  });
+  Object.values(volumes).forEach((list) =>
+    list.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0))
+  );
+  return { volumes, rest };
+}
+
 // ------------------------------------------------------------------ plano
 
 export interface StackPlan {

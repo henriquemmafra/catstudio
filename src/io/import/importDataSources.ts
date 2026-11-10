@@ -41,7 +41,6 @@ import openUriStream from '@/src/io/import/processors/openUriStream';
 import downloadStream from '@/src/io/import/processors/downloadStream';
 import handleDicomStream from '@/src/io/import/processors/handleDicomStream';
 import { FILE_EXT_TO_MIME } from '@/src/io/mimeTypes';
-import { asyncSelect } from '@/src/utils/asyncSelect';
 import { evaluateChain, Skip } from '@/src/utils/evaluateChain';
 import { ensureError, partition } from '@/src/utils';
 import { Chunk } from '@/src/core/streaming/chunk';
@@ -149,21 +148,51 @@ async function processImportQueue(
   const stateFileSetups: StateFileSetupResult[] = [];
   const results: ImportDataSourcesResult[] = [];
 
+  // CatStudio: fila de concluídos em O(N). O original refazia um
+  // Promise.race sobre todos os pendentes a cada arquivo concluído — O(N²) em
+  // tempo e memória (~1 GB de promessas ao abrir uma pasta com 2000 imagens).
+  type QueueItem = {
+    promise: Promise<ImportResult>;
+    source: DataSource;
+  };
+  const settled: QueueItem[] = [];
+  let next = 0;
+  let pending = 0;
+  let wake: (() => void) | null = null;
+
   const enqueue = (sources: DataSource[]) =>
     sources
       .filter((src) => !shouldSkipImportSource(src))
-      .map((src) => ({
-        promise: evaluateChain(src, handlers, importContext),
-        source: src,
-      }));
+      .forEach((src) => {
+        const item: QueueItem = {
+          promise: evaluateChain(src, handlers, importContext),
+          source: src,
+        };
+        pending += 1;
+        item.promise
+          .catch(() => {})
+          .then(() => {
+            settled.push(item);
+            const resume = wake;
+            wake = null;
+            resume?.();
+          });
+      });
 
-  let queue = enqueue(dataSources);
+  enqueue(dataSources);
 
-  while (queue.length) {
-    const { index } = await asyncSelect(queue.map((item) => item.promise));
-    const { promise, source } = queue[index];
+  while (pending > 0) {
+    if (next >= settled.length) {
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+      continue;
+    }
+    const { promise, source } = settled[next];
+    settled[next] = undefined as unknown as QueueItem;
+    next += 1;
+    pending -= 1;
     const result = await promise.catch((err) => asErrorResult(err, source));
-    queue = queue.filter((_, i) => i !== index);
 
     switch (result.type) {
       case 'stateFileSetup':
@@ -176,7 +205,7 @@ async function processImportQueue(
         );
         chunkSources.push(...chunks);
 
-        queue.push(...enqueue(otherSources));
+        enqueue(otherSources);
         break;
       }
       case 'config':

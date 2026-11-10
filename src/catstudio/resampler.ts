@@ -162,7 +162,8 @@ export class StackResampler {
     this.rowA = new Float64Array(plan.dims[0]);
     this.rowB = new Float64Array(plan.dims[0]);
     this.tmp = new Float64Array(plan.cols);
-    out.fill(this.integral ? Math.round(fill) : fill);
+    // sem pré-preenchimento: cada fatia é escrita por inteiro em computeSlice
+    // (não toca a memória de volumes que ainda não foram exibidos)
   }
 
   get complete() {
