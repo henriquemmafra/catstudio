@@ -6,12 +6,121 @@
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="./catstudio.svg" />
     <title>CatStudio</title>
+    <!-- CatStudio: fundo escuro desde o primeiro instante e tela de carregamento
+         que mostra o erro (em vez de uma página em branco) se o app não subir. -->
+    <style>
+      html,
+      body {
+        background: #121212;
+        color: #c6ccce;
+        margin: 0;
+      }
+      #cs-boot {
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        max-width: 620px;
+        margin: 12vh auto 0;
+        padding: 0 24px;
+        line-height: 1.5;
+      }
+      #cs-boot h1 {
+        font-weight: 500;
+        font-size: 22px;
+        color: #e9e4da;
+      }
+      #cs-boot b {
+        color: #f2b866;
+      }
+      #cs-boot pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #1d2124;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 12px;
+        font-size: 12.5px;
+        color: #e9e4da;
+      }
+    </style>
   </head>
   <body>
     <noscript>
       <strong>O CatStudio precisa de JavaScript habilitado.</strong>
     </noscript>
-    <div id="app"></div>
+    <div id="app">
+      <div id="cs-boot">
+        <h1>Cat<b>Studio</b></h1>
+        <p id="cs-boot-msg">Carregando…</p>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var shown = false;
+        var started = Date.now();
+        function stillBooting() {
+          return !!document.getElementById('cs-boot');
+        }
+        function esc(s) {
+          return String(s).replace(/[&<>]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c];
+          });
+        }
+        function webgl2() {
+          try {
+            return !!document.createElement('canvas').getContext('webgl2');
+          } catch (e) {
+            return false;
+          }
+        }
+        function show(reason) {
+          if (shown || !stillBooting()) return;
+          shown = true;
+          var box = document.getElementById('cs-boot');
+          box.innerHTML =
+            '<h1>Cat<b>Studio</b> não conseguiu iniciar neste navegador</h1>' +
+            '<p>Use o Chrome ou o Edge atualizados, de preferência no computador. ' +
+            'Se o problema continuar, mande um print desta tela.</p>' +
+            '<pre>' +
+            esc(reason) +
+            '\n\nWebGL2: ' +
+            (webgl2() ? 'sim' : 'NÃO') +
+            ' · módulos JS: ' +
+            ('noModule' in document.createElement('script') ? 'sim' : 'NÃO') +
+            ' · ' +
+            Math.round((Date.now() - started) / 1000) +
+            ' s\n' +
+            esc(navigator.userAgent) +
+            '</pre>';
+        }
+        window.__csBootError = show;
+        window.addEventListener(
+          'error',
+          function (e) {
+            var t = e.target;
+            if (t && t !== window && (t.src || t.href)) {
+              show('Falha ao baixar ' + String(t.src || t.href).split('/').pop());
+            } else {
+              show(
+                (e.message || 'Erro') +
+                  (e.filename
+                    ? ' (' + String(e.filename).split('/').pop() + ':' + e.lineno + ')'
+                    : '')
+              );
+            }
+          },
+          true
+        );
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason;
+          show('Promise rejeitada: ' + (r && (r.stack || r.message) ? r.stack || r.message : r));
+        });
+        setTimeout(function () {
+          show('O aplicativo não terminou de carregar em 30 s.');
+        }, 30000);
+        if (!('noModule' in document.createElement('script'))) {
+          show('Este navegador não suporta módulos JavaScript.');
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
