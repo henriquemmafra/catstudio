@@ -48,7 +48,7 @@ async function readHeader(file: Blob): Promise<DataSet | null> {
         vrCallback: (tag: string) => (SEQUENCES.has(tag) ? 'SQ' : undefined),
       } as any);
       if (complete || data.elements[PIXEL_DATA]) return data;
-    } catch (error) {
+    } catch {
       if (complete) return null;
     }
     length = Math.min(file.size, length * 4);
@@ -86,7 +86,9 @@ export async function augmentEnhancedMetadata(
   if (!frames.length) return metadata;
 
   const attr = (frame: DataSet | undefined, seq: string, tag: string) =>
-    str(first(shared, seq), tag) ?? str(first(frame, seq), tag) ?? str(data!, tag);
+    str(first(shared, seq), tag) ??
+    str(first(frame, seq), tag) ??
+    str(data!, tag);
 
   const iop = attr(frames[0], ORIENTATION, IMAGE_ORIENTATION);
   const spacing = attr(frames[0], MEASURES, PIXEL_SPACING);
@@ -96,7 +98,9 @@ export async function augmentEnhancedMetadata(
       attr(f, ORIENTATION, IMAGE_ORIENTATION) === iop &&
       attr(f, MEASURES, PIXEL_SPACING) === spacing
   );
-  const positions = frames.map((f) => numbers(str(first(f, POSITION), IMAGE_POSITION)));
+  const positions = frames.map((f) =>
+    numbers(str(first(f, POSITION), IMAGE_POSITION))
+  );
   if (
     !iop ||
     !spacing ||

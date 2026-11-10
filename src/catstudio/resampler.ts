@@ -38,7 +38,13 @@ function cubicWeights(t: number, w: Float64Array) {
  * resultado ao intervalo dos dois vizinhos centrais — sem halos/overshoot nas
  * bordas osso/ar, mas mais nítido que a interpolação linear.
  */
-function cubic(p0: number, p1: number, p2: number, p3: number, w: Float64Array) {
+function cubic(
+  p0: number,
+  p1: number,
+  p2: number,
+  p3: number,
+  w: Float64Array
+) {
   const v = p0 * w[0] + p1 * w[1] + p2 * w[2] + p3 * w[3];
   const lo = p1 < p2 ? p1 : p2;
   const hi = p1 < p2 ? p2 : p1;
@@ -142,7 +148,9 @@ export class StackResampler {
     this.plan = plan;
     this.out = out;
     this.fill = fill;
-    this.integral = !(out instanceof Float32Array || out instanceof Float64Array);
+    this.integral = !(
+      out instanceof Float32Array || out instanceof Float64Array
+    );
     this.raw = new Array(plan.count).fill(null);
     this.done = new Uint8Array(plan.dims[2]);
     this.dependents = Array.from({ length: plan.count }, () => []);
@@ -166,11 +174,17 @@ export class StackResampler {
    * quadros). Devolve o intervalo [primeira, última] de fatias de saída
    * calculadas, ou null se nenhuma ficou pronta.
    */
-  addSource(sourceIndex: number, data: ArrayLike<number>): [number, number] | null {
+  addSource(
+    sourceIndex: number,
+    data: ArrayLike<number>
+  ): [number, number] | null {
     const k = this.plan.rank[sourceIndex];
-    if (k === undefined) throw new Error(`Corte de origem ${sourceIndex} fora do plano`);
+    if (k === undefined)
+      throw new Error(`Corte de origem ${sourceIndex} fora do plano`);
     if (data.length < this.plan.rows * this.plan.cols)
-      throw new Error(`Corte de origem ${sourceIndex} menor que a matriz declarada`);
+      throw new Error(
+        `Corte de origem ${sourceIndex} menor que a matriz declarada`
+      );
     if (this.remaining[k] === 0) return null;
     this.raw[k] = data;
     let lo = Infinity;
@@ -204,13 +218,38 @@ export class StackResampler {
     const base = o * nx * ny;
     for (let j = 0; j < ny; j++) {
       const { tmp, wx, wy } = this;
-      sampleRow(A, rows, cols, plan.du[ka], j + plan.dv[ka], fill, rowA, tmp, wy, wx);
+      sampleRow(
+        A,
+        rows,
+        cols,
+        plan.du[ka],
+        j + plan.dv[ka],
+        fill,
+        rowA,
+        tmp,
+        wy,
+        wx
+      );
       if (wb !== 0)
-        sampleRow(B, rows, cols, plan.du[kb], j + plan.dv[kb], fill, rowB, tmp, wy, wx);
+        sampleRow(
+          B,
+          rows,
+          cols,
+          plan.du[kb],
+          j + plan.dv[kb],
+          fill,
+          rowB,
+          tmp,
+          wy,
+          wx
+        );
       const off = base + j * nx;
       if (this.integral) {
-        if (wb === 0) for (let i = 0; i < nx; i++) out[off + i] = Math.round(rowA[i]);
-        else for (let i = 0; i < nx; i++) out[off + i] = Math.round(rowA[i] * wa + rowB[i] * wb);
+        if (wb === 0)
+          for (let i = 0; i < nx; i++) out[off + i] = Math.round(rowA[i]);
+        else
+          for (let i = 0; i < nx; i++)
+            out[off + i] = Math.round(rowA[i] * wa + rowB[i] * wb);
       } else if (wb === 0) {
         for (let i = 0; i < nx; i++) out[off + i] = rowA[i];
       } else {

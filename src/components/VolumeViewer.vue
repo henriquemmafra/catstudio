@@ -46,7 +46,27 @@
                 activator="parent"
                 transition="slide-x-transition"
               >
-                Reset Camera
+                Recentralizar câmera
+              </v-tooltip>
+            </v-btn>
+            <v-btn
+              class="pointer-events-all"
+              color="white"
+              icon
+              size="medium"
+              variant="text"
+              data-testid="export-3d-png"
+              @click="exportPNG"
+            >
+              <v-icon size="medium" class="py-1 view-control-icon">
+                mdi-image-move
+              </v-icon>
+              <v-tooltip
+                location="right"
+                activator="parent"
+                transition="slide-x-transition"
+              >
+                Exportar imagem (PNG, sem textos nem dados do paciente)
               </v-tooltip>
             </v-btn>
             <span class="ml-3">{{ currentImageMetadata.name }}</span>
@@ -84,6 +104,7 @@ import { useResetViewsEvents } from '@/src/components/tools/ResetViews.vue';
 import { onVTKEvent } from '@/src/composables/onVTKEvent';
 import { useViewStore } from '@/src/store/views';
 import ViewTypeSwitcher from '@/src/components/ViewTypeSwitcher.vue';
+import { captureViewPNG } from '@/src/catstudio/capture';
 
 interface Props {
   viewId: string;
@@ -116,6 +137,11 @@ function resetCamera() {
 }
 
 useResetViewsEvents().onClick(resetCamera);
+
+// CatStudio: exportar a vista 3D como PNG
+function exportPNG() {
+  if (vtkView.value) captureViewPNG(vtkView.value, '3d');
+}
 
 useWebGLWatchdog(vtkView);
 useViewAnimationListener(vtkView, viewId, viewType);

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { presetLabel } from '@/src/catstudio/labels';
 import { computed, defineComponent } from 'vue';
 import { PresetNameList } from '@/src/vtk/ColorMaps';
 import vtkColorMaps from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/ColorMaps';
@@ -104,6 +105,7 @@ export default defineComponent({
       thumbnails: currentThumbnails,
       hasCurrentImage,
       preset: selectedPreset,
+      presetLabel,
       fullMappingRange: effectiveMappingRange,
       mappingRange: computed(
         () => colorTransferFunctionRef.value!.mappingRange
@@ -139,7 +141,7 @@ export default defineComponent({
             <v-img :src="thumbnails[preset] || ''" cover aspect-ratio="1">
               <persistent-overlay class="thumbnail-overlay">
                 <div class="thumbnail-overlay-text">
-                  {{ preset.replace(/-/g, ' ') }}
+                  {{ presetLabel(preset) }}
                 </div>
               </persistent-overlay>
             </v-img>

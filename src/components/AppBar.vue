@@ -3,8 +3,7 @@ import { ref } from 'vue';
 import { useDisplay } from 'vuetify';
 import CloseableDialog from '@/src/components/CloseableDialog.vue';
 import AboutBox from '@/src/components/AboutBox.vue';
-import VolViewFullLogo from '@/src/components/icons/VolViewFullLogo.vue';
-import VolViewLogo from '@/src/components/icons/VolViewLogo.vue';
+import CatStudioLogo from '@/src/catstudio/components/CatStudioLogo.vue';
 import { useKeyboardShortcutsStore } from '@/src/store/keyboard-shortcuts';
 
 const emit = defineEmits(['click:left-menu']);
@@ -17,9 +16,8 @@ const keyboardStore = useKeyboardShortcutsStore();
 <template>
   <v-app-bar app clipped-left :height="48">
     <v-btn icon="mdi-menu" @click="emit('click:left-menu')" />
-    <v-toolbar-title class="d-flex flex-row align-center mt-3">
-      <vol-view-logo v-if="mobile" />
-      <vol-view-full-logo v-else />
+    <v-toolbar-title class="d-flex flex-row align-center">
+      <CatStudioLogo :compact="mobile" />
     </v-toolbar-title>
     <v-btn
       variant="text"
@@ -30,7 +28,7 @@ const keyboardStore = useKeyboardShortcutsStore();
     >
       <v-icon icon="mdi-keyboard"></v-icon>
       <v-tooltip activator="parent" location="bottom">
-        Keyboard Shortcuts
+        Atalhos de teclado
       </v-tooltip>
     </v-btn>
     <v-btn
@@ -41,7 +39,9 @@ const keyboardStore = useKeyboardShortcutsStore();
       @click="aboutBoxDialog = !aboutBoxDialog"
     >
       <v-icon icon="mdi-information-outline"></v-icon>
-      <v-tooltip activator="parent" location="bottom">About</v-tooltip>
+      <v-tooltip activator="parent" location="bottom">
+        Sobre o CatStudio
+      </v-tooltip>
     </v-btn>
   </v-app-bar>
   <closeable-dialog v-model="aboutBoxDialog">

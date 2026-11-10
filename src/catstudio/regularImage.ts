@@ -13,7 +13,13 @@ import {
   getVolumeBufferType,
 } from '@/src/utils/allocateImageFromChunks';
 import type { Chunk } from '@/src/core/streaming/chunk';
-import { CT, planForMetas, seriesLabel, type Meta, type Note } from './geometry';
+import {
+  CT,
+  planForMetas,
+  seriesLabel,
+  type Meta,
+  type Note,
+} from './geometry';
 import { StackResampler } from './resampler';
 
 export interface RegularImage {
@@ -72,7 +78,10 @@ export function regularizeChunks(chunks: Chunk[]): RegularizeOutcome | null {
   image.setOrigin(plan.origin as Vector3);
   image.setSpacing(plan.spacing as Vector3);
   image.setDirection(plan.direction as unknown as mat3);
-  const scalars = vtkDataArray.newInstance({ numberOfComponents: 1, values: buffer });
+  const scalars = vtkDataArray.newInstance({
+    numberOfComponents: 1,
+    values: buffer,
+  });
   image.getPointData().setScalars(scalars);
   scalars.setRange({ min: 0, max: 255 }, 0);
 

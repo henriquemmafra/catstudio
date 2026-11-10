@@ -7,6 +7,7 @@ import {
 } from '@/src/store/view-configs/windowing';
 import { useViewStore } from '@/src/store/views';
 import { WLAutoRanges, WLPresetsCT } from '@/src/constants';
+import { pt } from '@/src/catstudio/labels';
 import { getWindowLevels, useDICOMStore } from '@/src/store/datasets-dicom';
 import { isDicomImage } from '@/src/utils/dataSelection';
 import { storeToRefs } from 'pinia';
@@ -40,8 +41,9 @@ export default defineComponent({
       );
     });
 
+    // CatStudio: rótulos em português (as chaves dos presets já estão em pt)
     function parseLabel(text: string) {
-      return text.replace(/([A-Z])/g, ' $1').trim();
+      return pt(text);
     }
 
     // --- CT Preset Options --- //
@@ -228,7 +230,9 @@ export default defineComponent({
           block
           v-slot="{ disabled }"
         >
-          <v-card-subtitle class="py-1">File Specific Presets</v-card-subtitle>
+          <v-card-subtitle class="py-1"
+            >Janelas do arquivo DICOM</v-card-subtitle
+          >
           <div class="px-4 pb-2">
             <v-radio
               v-for="(value, idx) in tags"
@@ -248,7 +252,7 @@ export default defineComponent({
           block
           v-slot="{ disabled }"
         >
-          <v-card-subtitle class="pb-1">CT Presets</v-card-subtitle>
+          <v-card-subtitle class="pb-1">Janelas de TC</v-card-subtitle>
           <div class="px-4 pb-2">
             <v-radio
               v-for="(wl, name) in WLPresetsCT"
@@ -262,7 +266,7 @@ export default defineComponent({
           </div>
         </ReasonedAction>
 
-        <v-card-subtitle class="pb-1">Auto Window/Level</v-card-subtitle>
+        <v-card-subtitle class="pb-1">Janela automática</v-card-subtitle>
         <div class="px-4 pb-2">
           <v-radio
             v-for="(value, key) in WLAutoRanges"

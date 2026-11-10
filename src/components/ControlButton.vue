@@ -16,13 +16,15 @@
       activator="parent"
       transition="slide-x-transition"
     >
-      <span>{{ name }}</span>
+      <span>{{ displayName }}</span>
     </v-tooltip>
     <slot />
   </v-btn>
 </template>
 
 <script>
+import { pt } from '@/src/catstudio/labels';
+
 export default {
   name: 'ControlButton',
   props: {
@@ -34,6 +36,11 @@ export default {
   },
 
   computed: {
+    // CatStudio: tooltip em português; o nome original segue no data-testid
+    displayName() {
+      const m = /^(.*?)( \[.*\])?$/.exec(this.name);
+      return m ? `${pt(m[1])}${m[2] ?? ''}` : this.name;
+    },
     sizeV() {
       return Number(this.size);
     },

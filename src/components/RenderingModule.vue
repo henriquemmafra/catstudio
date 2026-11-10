@@ -113,7 +113,7 @@ export default defineComponent({
         >
           <v-expansion-panel-title data-testid="volume-rendering-toggle">
             <v-icon class="flex-grow-0 mr-4">mdi-cube-outline</v-icon>
-            3D Rendering
+            Renderização 3D
           </v-expansion-panel-title>
           <v-expansion-panel-text eager class="volume-controls">
             <v-skeleton-loader v-if="isImageLoading" type="image" />
@@ -127,7 +127,7 @@ export default defineComponent({
               <v-expansion-panel value="preset">
                 <v-expansion-panel-title>
                   <v-icon class="flex-grow-0 mr-4">mdi-palette</v-icon>
-                  Color Presets
+                  Presets de cor
                 </v-expansion-panel-title>
                 <v-expansion-panel-text>
                   <volume-presets :view-id="view3DId" />
@@ -137,7 +137,7 @@ export default defineComponent({
               <v-expansion-panel value="properties">
                 <v-expansion-panel-title>
                   <v-icon class="flex-grow-0 mr-4">mdi-cube-scan</v-icon>
-                  Cinematic Rendering
+                  Renderização cinematográfica
                 </v-expansion-panel-title>
                 <v-expansion-panel-text>
                   <volume-properties :view-id="view3DId" />
@@ -150,7 +150,7 @@ export default defineComponent({
         <v-expansion-panel v-if="hasCurrentImage" value="layers">
           <v-expansion-panel-title>
             <v-icon class="flex-grow-0 mr-4">mdi-layers</v-icon>
-            Layers
+            Camadas
           </v-expansion-panel-title>
           <v-expansion-panel-text>
             <layer-list />
@@ -191,7 +191,7 @@ export default defineComponent({
     <template v-else>
       <div class="pt-12 text-subtitle-1 d-flex flex-row justify-center">
         <div class="text-center" style="max-width: 75%">
-          Load an image to adjust its display settings
+          Abra um exame para ajustar a visualização
         </div>
       </div>
     </template>

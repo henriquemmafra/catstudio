@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { pt } from '@/src/catstudio/labels';
 import { computed } from 'vue';
 import { useViewStore } from '@/src/store/views';
 import LayoutGridEditor from './LayoutGridEditor.vue';
@@ -31,7 +32,7 @@ const selectNamedLayout = (name: string) => {
           :active="viewStore.currentLayoutName === name"
           @click="selectNamedLayout(name)"
         >
-          <v-list-item-title>{{ name }}</v-list-item-title>
+          <v-list-item-title>{{ pt(name) }}</v-list-item-title>
         </v-list-item>
       </v-list>
       <v-divider class="my-2" />

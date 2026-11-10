@@ -1,10 +1,12 @@
+<!-- CatStudio: "Sobre" em português, com o crédito ao VolView/Kitware -->
 <template>
   <v-card>
-    <v-card-title class="d-flex flex-row justify-center">
-      <vol-view-full-logo />
+    <v-card-title class="d-flex flex-row justify-center py-4">
+      <CatStudioLogo />
     </v-card-title>
     <v-alert color="secondary" variant="tonal" class="notice">
-      For investigational use only
+      Uso em pesquisa e ensino. Não é dispositivo médico; não use para
+      diagnóstico.
     </v-alert>
     <v-card-text>
       <v-btn
@@ -13,137 +15,66 @@
         prepend-icon="mdi-keyboard"
         color="secondary"
       >
-        Keyboard Shortcuts and View Controls
+        Atalhos de teclado e controles das vistas
       </v-btn>
-      <h2 class="mt-2">About VolView</h2>
+      <h2 class="mt-2">Sobre o CatStudio</h2>
       <v-divider class="mb-2" />
-      <p class="float-right">
-        <v-img
-          v-show="!mobile"
-          src="../assets/KitwareHeadAndNeck.jpg"
-          alt="Head and neck CT rendering"
-          width="200px"
-          class="ma-1"
-          align="center"
-        /><br />
-      </p>
       <p>
-        <a
-          rel="noopener noreferrer"
-          target="_blank"
-          href="https://volview.kitware.com/"
-        >
-          <span>VolView</span>
-        </a>
-        is an open-source web application developed at
-        <a
-          rel="noopener noreferrer"
-          target="_blank"
-          href="https://kitware.com/"
-        >
-          <span>Kitware</span>
-        </a>
-        for visualizing and annotating medical images. It key features include:
+        <strong>CatStudio — Cinematic Anatomical Tomography Studio</strong> é um
+        visualizador de tomografia com MPR e reconstrução 3D cinematográfica que
+        roda inteiramente no navegador: os arquivos DICOM são lidos,
+        decodificados e reconstruídos neste computador, sem servidor.
       </p>
-
-      <ul>
-        <li>Fast: Drag-and-drop DICOM files for quick viewing</li>
+      <ul class="my-2">
         <li>
-          Flexible: Designed to be easily integrated into existing systems
+          Geometria DICOM verificada: gantry inclinado, lacunas e espaçamento
+          irregular são reamostrados para uma grade regular (com aviso);
+          aquisições repetidas e matrizes diferentes viram volumes separados;
+          Enhanced CT/MR multi-frame usa a posição de cada quadro.
         </li>
-        <li>
-          Beautiful: Cinematic volume rendering to generate high-quality 3D
-          visualizations
-        </li>
-        <li>
-          Friendly: Familiar radiological image visualization and annotation
-          tools
-        </li>
-        <li>
-          Secure: Your data stays on your machine. No cloud services or data
-          servers are used.
-        </li>
+        <li>Privacidade: a identificação do paciente não aparece na tela.</li>
       </ul>
-      <br />
-      VolView is freely available for research, educational, and commercial
-      applications. It is built on a variety of open-source toolkits created by
-      Kitware, such as
-      <a
-        rel="noopener noreferrer"
-        target="_blank"
-        href="https://github.com/InsightSoftwareConsortium/itk-wasm/"
-      >
-        <span>itk-wasm</span>
-      </a>
-      for DICOM I/O and image processing, and
-      <a
-        rel="noopener noreferrer"
-        target="_blank"
-        href="https://github.com/Kitware/vtk-js"
-      >
-        <span>vtk.js</span>
-      </a>
-      for in-browser scientific visualization.
-      <br />
-      <br />
-      Want help customizing VolView or creating a new web-based visualization
-      application?
-      <a
-        rel-="noopener noreferrer"
-        target="_blank"
-        href="https://www.kitware.com/contact/project/"
-        >Contact Kitware!</a
-      >
-      <h2 class="mt-2">Useful Links</h2>
+      <h2 class="mt-4">Base: VolView (Kitware)</h2>
       <v-divider class="mb-2" />
-      <ul>
-        <li>
-          <span>VolView source code repo: </span>
-          <a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="https://github.com/Kitware/VolView"
-          >
-            https://github.com/Kitware/VolView
-          </a>
-        </li>
-        <li>
-          <span>Community support forum: </span>
-          <a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="https://discourse.vtk.org/c/web/volview/14"
-          >
-            https://discourse.vtk.org/c/web/volview/14
-          </a>
-        </li>
-        <li>
-          <span>File an bug report or feature request: </span>
-          <a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="https://github.com/Kitware/VolView/issues"
-          >
-            https://github.com/Kitware/VolView/issues
-          </a>
-        </li>
-        <li>
-          <span>Submit feedback: </span>
-          <a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="https://volview.kitware.com/feedback/"
-          >
-            https://volview.kitware.com/feedback/
-          </a>
-        </li>
-      </ul>
-      <h2>Version Info</h2>
+      <p>
+        O CatStudio é construído sobre o
+        <a
+          rel="noopener noreferrer"
+          target="_blank"
+          href="https://github.com/Kitware/VolView"
+          >VolView</a
+        >, aplicação de código aberto da
+        <a
+          rel="noopener noreferrer"
+          target="_blank"
+          href="https://www.kitware.com/"
+          >Kitware</a
+        >
+        (licença Apache 2.0), que usa
+        <a
+          rel="noopener noreferrer"
+          target="_blank"
+          href="https://github.com/Kitware/vtk-js"
+          >vtk.js</a
+        >
+        para a visualização e
+        <a
+          rel="noopener noreferrer"
+          target="_blank"
+          href="https://github.com/InsightSoftwareConsortium/itk-wasm/"
+          >itk-wasm</a
+        >
+        para leitura DICOM. O desenvolvimento do VolView foi financiado, em
+        parte, pelo NIH (NIBIB e NIGMS R01EB021396, NIBIB R01EB014955, NCI
+        R01CA220681 e NINDS R42NS086295). Os presets de renderização volumétrica
+        vêm do VolView/ParaView/3D Slicer.
+      </p>
+      <h2 class="mt-4">Versões</h2>
       <v-divider class="mb-2" />
       <ul>
         <li>
           <div class="d-flex flex-flow align-center text-no-wrap">
-            <span>VolView: </span>
+            <span>VolView (base): </span>
             <v-badge inline :content="versions.volview" />
           </div>
         </li>
@@ -160,112 +91,22 @@
           </div>
         </li>
       </ul>
-      <h2 class="mt-2">Acknowledgments</h2>
-      <v-divider class="mb-2" />
-      This work was funded, in part, by the NIH via NIBIB and NIGMS R01EB021396,
-      NIBIB R01EB014955, NCI R01CA220681, and NINDS R42NS086295
-      <br />
-      <br />
-      Sample data provided by the following sources:
-      <ul>
-        <li>
-          MRA Head and Neck: Test case 98890234 from the "Patient Contributed
-          Image Repository" (<a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="http://www.pcir.org/researchers/98890234_20030505_MR.html"
-            >PCIR.org</a
-          >)
-        </li>
-        <li>
-          PROSTATEx Challenge Data: Geert Litjens, Oscar Debats, Jelle Barentsz,
-          Nico Karssemeijer, and Henkjan Huisman. "ProstateX Challenge data",
-          The Cancer Imaging Archive (2017). DOI: 10.7937/K9TCIA.2017.MURS5CL
-          (<a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="https://wiki.cancerimagingarchive.net/pages/viewpage.action?pageId=23691656"
-            >TCIA</a
-          >)
-        </li>
-        <li>
-          3D ultrasound of a fetus: Sample data from
-          <a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="http://tomovision.com"
-            >tomovision.com</a
-          >
-        </li>
-        <li>
-          <strong>PET/CT Chest:</strong> Li, P., Wang, S., Li, T., Lu, J.,
-          HuangFu, Y., and Wang, D. (2020). "A Large-Scale CT and PET/CT Dataset
-          for Lung Cancer Diagnosis (Lung-PET-CT-Dx)." The Cancer Imaging
-          Archive.
-          <a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="https://doi.org/10.7937/TCIA.2020.NNC2-0461"
-            >DOI: 10.7937/TCIA.2020.NNC2-0461</a
-          >.
-          <a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="https://creativecommons.org/licenses/by/4.0/"
-            >CC BY 4.0</a
-          >. Ten original DICOM instances selected from each series.
-        </li>
-        <li>
-          Retinal layers: OCT data and manual delineations from
-          <a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="https://iacl.ece.jhu.edu/index.php/OCT_Data"
-            >Johns Hopkins IACL</a
-          >. Y. He, A. Carass, S. D. Solomon, S. Saidha, P. A. Calabresi, and J.
-          L. Prince, "Retinal layer parcellation of optical coherence tomography
-          images: Data resource for Multiple Sclerosis and Healthy Controls",
-          Data in Brief 22:601–604 (2019),
-          <a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="https://doi.org/10.1016/j.dib.2018.12.073"
-            >doi:10.1016/j.dib.2018.12.073</a
-          >. Source data publication: © 2018 The Authors,
-          <a
-            rel="noopener noreferrer"
-            target="_blank"
-            href="https://creativecommons.org/licenses/by/4.0/"
-            >CC BY 4.0</a
-          >. Converted from VOL/MAT to NRRD, with lateral subsampling,
-          interpolation onto a regular B-scan grid, and rasterization of the
-          manual boundaries into eight tissue labels.
-        </li>
-      </ul>
     </v-card-text>
   </v-card>
 </template>
-
-<style scoped>
-.notice {
-  width: fit-content;
-  margin: 0 auto;
-  text-transform: uppercase;
-}
-</style>
 
 <script>
 /* global __VERSIONS__ */
 
 import { defineComponent } from 'vue';
 import { useDisplay } from 'vuetify';
-import VolViewFullLogo from './icons/VolViewFullLogo.vue';
+import CatStudioLogo from '@/src/catstudio/components/CatStudioLogo.vue';
 import { useKeyboardShortcutsStore } from '../store/keyboard-shortcuts';
 
 export default defineComponent({
   name: 'AboutBox',
   components: {
-    VolViewFullLogo,
+    CatStudioLogo,
   },
   setup() {
     const display = useDisplay();

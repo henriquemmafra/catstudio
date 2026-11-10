@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
 import { ref, computed } from 'vue';
-import { loadUserPromptedFiles } from '@/src/actions/loadUserFiles';
+import {
+  loadUserPromptedFiles,
+  loadUserPromptedFolder,
+} from '@/src/actions/loadUserFiles';
 import useRemoteSaveStateStore from '@/src/store/remote-save-state';
 import CloseableDialog from '@/src/components/CloseableDialog.vue';
 import SaveSession from '@/src/components/SaveSession.vue';
@@ -93,14 +96,21 @@ const { count: msgCount, badgeColor: msgBadgeColor } = useMessageBubble();
   <div id="tools-strip" class="bg-surface d-flex flex-column align-center">
     <control-button
       size="40"
-      icon="mdi-folder-open"
-      name="Open files"
+      icon="mdi-file-multiple"
+      name="Abrir arquivos DICOM"
       @click="loadUserPromptedFiles"
     />
     <control-button
       size="40"
+      icon="mdi-folder-open"
+      name="Abrir pasta do exame"
+      data-testid="open-folder"
+      @click="loadUserPromptedFolder"
+    />
+    <control-button
+      size="40"
       icon="mdi-content-save-all"
-      name="Save session"
+      name="Salvar sessão (arquivo local)"
       :loading="isSaving"
       @click="handleSave"
     />
@@ -128,7 +138,7 @@ const { count: msgCount, badgeColor: msgBadgeColor } = useMessageBubble();
       v-if="serverUrl"
       size="40"
       :icon="connIcon"
-      name="Open Server Settings"
+      name="Servidor remoto"
       @click="settingsDialog = true"
     />
     <v-badge
@@ -142,14 +152,14 @@ const { count: msgCount, badgeColor: msgBadgeColor } = useMessageBubble();
       <control-button
         size="40"
         icon="mdi-bell-outline"
-        name="Notifications"
+        name="Mensagens"
         @click="messageDialog = true"
       />
     </v-badge>
     <control-button
       size="40"
       icon="mdi-cog"
-      name="Settings"
+      name="Configurações"
       @click="settingsDialog = true"
     />
   </div>

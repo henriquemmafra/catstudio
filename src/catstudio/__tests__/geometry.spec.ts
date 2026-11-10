@@ -17,7 +17,13 @@ const field = (p: number[]) => 3 * p[0] - 2 * p[1] + 5 * p[2] + 7;
 const ROW = [1, 0, 0];
 const COL = [0, 1, 0];
 
-function tiltedStack(n: number, dz: number[], tiltDeg: number, cols = 20, rows = 16) {
+function tiltedStack(
+  n: number,
+  dz: number[],
+  tiltDeg: number,
+  cols = 20,
+  rows = 16
+) {
   // cortes axiais deslocados em y proporcionalmente a z (gantry tilt)
   const tan = Math.tan((tiltDeg * Math.PI) / 180);
   const positions: number[][] = [];
@@ -29,7 +35,13 @@ function tiltedStack(n: number, dz: number[], tiltDeg: number, cols = 20, rows =
   return { positions, cols, rows, sx: 0.7, sy: 0.9 };
 }
 
-function sliceValues(p: number[], cols: number, rows: number, sx: number, sy: number) {
+function sliceValues(
+  p: number[],
+  cols: number,
+  rows: number,
+  sx: number,
+  sy: number
+) {
   const out = new Float64Array(cols * rows);
   for (let j = 0; j < rows; j++)
     for (let i = 0; i < cols; i++)
@@ -81,13 +93,25 @@ function resampleAll(
 describe('planStack', () => {
   it('pilha uniforme não é reamostrada', () => {
     const s = tiltedStack(10, [2.5], 0);
-    const res = planStack({ positions: s.positions, iop: [...ROW, ...COL], pixel: [s.sx, s.sy], rows: s.rows, cols: s.cols });
+    const res = planStack({
+      positions: s.positions,
+      iop: [...ROW, ...COL],
+      pixel: [s.sx, s.sy],
+      rows: s.rows,
+      cols: s.cols,
+    });
     expect('plan' in res && res.plan.resample).toBe(false);
   });
 
   it('gantry tilt: grade ortogonal reproduz o campo', () => {
     const s = tiltedStack(12, [2.5], 15);
-    const res = planStack({ positions: s.positions, iop: [...ROW, ...COL], pixel: [s.sx, s.sy], rows: s.rows, cols: s.cols });
+    const res = planStack({
+      positions: s.positions,
+      iop: [...ROW, ...COL],
+      pixel: [s.sx, s.sy],
+      rows: s.rows,
+      cols: s.cols,
+    });
     if (!('plan' in res)) throw new Error(res.error);
     const { plan } = res;
     expect(plan.resample).toBe(true);
@@ -101,7 +125,13 @@ describe('planStack', () => {
 
   it('lacuna e espaçamento irregular: interpolação ao longo da normal', () => {
     const s = tiltedStack(15, [2, 3, 2, 3, 10, 2, 3], 0);
-    const res = planStack({ positions: s.positions, iop: [...ROW, ...COL], pixel: [s.sx, s.sy], rows: s.rows, cols: s.cols });
+    const res = planStack({
+      positions: s.positions,
+      iop: [...ROW, ...COL],
+      pixel: [s.sx, s.sy],
+      rows: s.rows,
+      cols: s.cols,
+    });
     if (!('plan' in res)) throw new Error(res.error);
     const { plan } = res;
     expect(plan.resample).toBe(true);
@@ -119,10 +149,21 @@ describe('planStack', () => {
     const row = [c, sn, 0];
     const col = [0, 0, -1];
     const normal = [sn, -c, 0]; // row × col
-    const positions = [3, 0, 4, 1, 2].map((k) => [10 + normal[0] * 2 * k, 5 + normal[1] * 2 * k, 30]);
+    const positions = [3, 0, 4, 1, 2].map((k) => [
+      10 + normal[0] * 2 * k,
+      5 + normal[1] * 2 * k,
+      30,
+    ]);
     const cols = 8;
     const rows = 6;
-    const res = planStack({ positions, iop: [...row, ...col], pixel: [1, 1.5], rows, cols, force: true });
+    const res = planStack({
+      positions,
+      iop: [...row, ...col],
+      pixel: [1, 1.5],
+      rows,
+      cols,
+      force: true,
+    });
     if (!('plan' in res)) throw new Error(res.error);
     const { plan } = res;
     expect(plan.dims).toEqual([8, 6, 5]);
@@ -130,7 +171,9 @@ describe('planStack', () => {
       const out = new Float64Array(cols * rows);
       for (let j = 0; j < rows; j++)
         for (let i = 0; i < cols; i++)
-          out[j * cols + i] = field([0, 1, 2].map((a) => p[a] + i * 1 * row[a] + j * 1.5 * col[a]));
+          out[j * cols + i] = field(
+            [0, 1, 2].map((a) => p[a] + i * 1 * row[a] + j * 1.5 * col[a])
+          );
       return out;
     };
     const out = new Float64Array(8 * 6 * 5);
@@ -143,11 +186,21 @@ describe('planStack', () => {
 
   it('memória: cortes de origem são liberados quando não são mais necessários', () => {
     const s = tiltedStack(30, [2.5], 10);
-    const res = planStack({ positions: s.positions, iop: [...ROW, ...COL], pixel: [s.sx, s.sy], rows: s.rows, cols: s.cols });
+    const res = planStack({
+      positions: s.positions,
+      iop: [...ROW, ...COL],
+      pixel: [s.sx, s.sy],
+      rows: s.rows,
+      cols: s.cols,
+    });
     if (!('plan' in res)) throw new Error(res.error);
-    const out = new Float64Array(res.plan.dims[0] * res.plan.dims[1] * res.plan.dims[2]);
+    const out = new Float64Array(
+      res.plan.dims[0] * res.plan.dims[1] * res.plan.dims[2]
+    );
     const r = new StackResampler(res.plan, out, -9999);
-    s.positions.forEach((p, i) => r.addSource(i, sliceValues(p, s.cols, s.rows, s.sx, s.sy)));
+    s.positions.forEach((p, i) =>
+      r.addSource(i, sliceValues(p, s.cols, s.rows, s.sx, s.sy))
+    );
     // @ts-expect-error acesso interno no teste
     expect(r.raw.every((x: unknown) => x === null)).toBe(true);
   });
@@ -184,7 +237,12 @@ describe('refineVolumes / splitStack', () => {
   });
 
   it('separa matrizes diferentes e ordena pela normal', () => {
-    const items = [axialMeta(5), axialMeta(0), axialMeta(2.5), axialMeta(7.5, { [CT.Rows]: '32', [CT.Columns]: '32' })];
+    const items = [
+      axialMeta(5),
+      axialMeta(0),
+      axialMeta(2.5),
+      axialMeta(7.5, { [CT.Rows]: '32', [CT.Columns]: '32' }),
+    ];
     const { parts } = splitStack(items.map(instanceInfo));
     expect(parts.length).toBe(2);
     expect(parts[0]).toEqual([1, 2, 0]);
@@ -198,7 +256,11 @@ describe('refineVolumes / splitStack', () => {
   it('planForMetas usa as posições por quadro do multi-frame', () => {
     const m = axialMeta(0, {
       [CT.NumberOfFrames]: '3',
-      [CT.FramePositions]: JSON.stringify([[0, 0, 5], [0, 0, 0], [0, 0, 2.5]]),
+      [CT.FramePositions]: JSON.stringify([
+        [0, 0, 5],
+        [0, 0, 0],
+        [0, 0, 2.5],
+      ]),
     });
     const res = planForMetas([m]);
     expect(res && 'plan' in res && res.plan.resample).toBe(true);

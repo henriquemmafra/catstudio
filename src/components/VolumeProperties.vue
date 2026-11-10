@@ -116,7 +116,7 @@ export default defineComponent({
         @click="showQualityWarning = false"
       >
         <div>
-          <b>Ultra</b> and <b>Beta</b> modes are unstable on some systems.
+          <b>Ultra</b> e <b>Beta</b> podem ser instáveis em algumas máquinas.
         </div>
         <v-btn
           size="small"
@@ -133,7 +133,7 @@ export default defineComponent({
       </v-alert>
       <v-divider class="my-8" />
       <v-slider
-        label="Ambient"
+        label="Ambiente"
         min="0"
         max="1"
         step="0.1"
@@ -144,7 +144,7 @@ export default defineComponent({
         @update:model-value="setCVRParam('ambient', $event)"
       />
       <v-slider
-        label="Diffuse"
+        label="Difusa"
         min="0"
         max="1"
         step="0.1"
@@ -155,7 +155,7 @@ export default defineComponent({
         @update:model-value="setCVRParam('diffuse', $event)"
       />
       <v-switch
-        label="Light follows camera"
+        label="Luz acompanha a câmera"
         density="compact"
         hide-details
         :model-value="cvrParams.lightFollowsCamera"
@@ -164,7 +164,7 @@ export default defineComponent({
       <v-divider class="my-8" />
 
       <v-switch
-        label="Local Ambient Occlusion"
+        label="Oclusão ambiente local"
         density="compact"
         hide-details
         :model-value="cvrParams.useLocalAmbientOcclusion"
@@ -194,7 +194,7 @@ export default defineComponent({
       <v-spacer class="my-2" />
 
       <v-slider
-        label="Scatter Blending"
+        label="Espalhamento volumétrico"
         min="0"
         max="1"
         step="0.05"

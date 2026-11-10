@@ -1,0 +1,11 @@
+# Testes do CatStudio no navegador (Python 3.10+)
+pytest
+playwright
+numpy
+pillow
+# geração dos fantomas DICOM (make_fixtures.py)
+pydicom>=3,<4
+pylibjpeg
+pylibjpeg-openjpeg
+pyjpegls
+python-gdcm

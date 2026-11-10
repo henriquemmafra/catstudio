@@ -20,12 +20,7 @@
               <VtkRenderWindowParent>
                 <layout-grid v-show="hasData" :layout="layout" />
               </VtkRenderWindowParent>
-              <welcome-page
-                v-if="!hasData"
-                :loading="showLoading"
-                class="clickable"
-                @click="loadUserPromptedFiles"
-              >
+              <welcome-page v-if="!hasData" :loading="showLoading">
               </welcome-page>
             </div>
           </div>
@@ -42,7 +37,7 @@
         <div class="d-flex flex-column align-center justify-center h-100">
           <div class="dnd-prompt">
             <v-icon size="4.75rem">mdi-download</v-icon>
-            <div class="text-h2 font-weight-bold">Drop your files to open</div>
+            <div class="text-h2 font-weight-bold">Solte para abrir o exame</div>
           </div>
         </div>
       </persistent-overlay>
@@ -141,7 +136,7 @@ export default defineComponent({
       ) {
         prefix = `${newMetadata.name} -`;
       }
-      document.title = `${prefix}VolView`;
+      document.title = `${prefix}CatStudio`;
     });
 
     // --- parse URL -- //

@@ -358,8 +358,10 @@ describe('En face windowing with normal view controls', () => {
       for (const method of ['mean', 'sum', 'max'] as const) {
         settings.method = method;
         await nextTick();
-        expect(controls.text()).toContain('CT Presets');
-        expect(controls.text().includes('File Specific Presets')).toBe(dicom);
+        expect(controls.text()).toContain('Janelas de TC'); // CatStudio
+        expect(controls.text().includes('Janelas do arquivo DICOM')).toBe(
+          dicom
+        ); // CatStudio
         const presets = controls
           .findAllComponents(ReasonedAction)
           .filter((preset) => preset.find('input[type="radio"]').exists());
@@ -378,7 +380,7 @@ describe('En face windowing with normal view controls', () => {
               : ''
           );
         }
-        expect(controls.text()).toContain('Auto Window/Level');
+        expect(controls.text()).toContain('Janela automática'); // CatStudio;
         expect(controls.text()).toContain('Manual');
       }
     }

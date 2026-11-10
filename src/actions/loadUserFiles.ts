@@ -441,6 +441,37 @@ export async function loadUserPromptedFiles() {
   return loadFiles(files);
 }
 
+// CatStudio: abrir a pasta inteira de um exame (subpastas incluídas). Os
+// arquivos são lidos localmente pelo navegador; nada é enviado.
+export function openFolderDialog() {
+  return new Promise<File[]>((resolve) => {
+    pendingFileInput?.remove();
+    const fileEl = document.createElement('input');
+    pendingFileInput = fileEl;
+    fileEl.setAttribute('type', 'file');
+    fileEl.setAttribute('webkitdirectory', '');
+    fileEl.setAttribute('multiple', 'multiple');
+    fileEl.hidden = true;
+    fileEl.addEventListener(
+      'change',
+      () => {
+        const files = [...(fileEl.files ?? [])];
+        fileEl.remove();
+        if (pendingFileInput === fileEl) pendingFileInput = undefined;
+        resolve(files);
+      },
+      { once: true }
+    );
+    document.body.appendChild(fileEl);
+    fileEl.click();
+  });
+}
+
+export async function loadUserPromptedFolder() {
+  const files = await openFolderDialog();
+  return loadFiles(files);
+}
+
 export function urlsToDataSources(
   urls: string[],
   names: string[] = []

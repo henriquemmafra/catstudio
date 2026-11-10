@@ -16,7 +16,7 @@
           :disabled="item.disabled"
         >
           <div class="tab-content">
-            <span class="mb-0 mt-1 module-text">{{ item.name }}</span>
+            <span class="mb-0 mt-1 module-text">{{ pt(item.name) }}</span>
             <v-icon>mdi-{{ item.icon }}</v-icon>
           </div>
         </v-tab>
@@ -56,6 +56,7 @@ import ServerModule from './ServerModule.vue';
 import ProbeView from './ProbeView.vue';
 import { useToolStore } from '../store/tools';
 import { Tools } from '../store/tools/types';
+import { pt } from '@/src/catstudio/labels';
 
 type Module = {
   name: string;
@@ -161,6 +162,7 @@ export default defineComponent({
     return {
       selectedModule,
       modules,
+      pt,
     };
   },
 });

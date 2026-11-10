@@ -77,8 +77,7 @@ export function basisFromIOP(iop: number[] | null): Basis | null {
   if (!iop || iop.length !== 6 || !iop.every(Number.isFinite)) return null;
   const r = iop.slice(0, 3);
   const c = iop.slice(3, 6);
-  if (Math.abs(norm(r) - 1) > 1e-3 || Math.abs(norm(c) - 1) > 1e-3)
-    return null;
+  if (Math.abs(norm(r) - 1) > 1e-3 || Math.abs(norm(c) - 1) > 1e-3) return null;
   if (Math.abs(dot(r, c)) > 1e-3) return null;
   const row = unit(r);
   const col = unit(c);
@@ -118,6 +117,19 @@ export function instanceInfo(meta: Meta): InstanceInfo {
   };
 }
 
+/**
+ * Modalidades em que o VolView tem regras próprias (OCT/oftalmologia,
+ * ultrassom, projeções): o CatStudio não mexe no agrupamento nem na grade.
+ */
+const UNMANAGED_MODALITIES =
+  /^(OPT|OCT|OP|OPM|US|IVUS|XA|RF|ES|XC|DX|CR|MG|SM)$/;
+
+export function geometryManaged(meta: Meta) {
+  return !UNMANAGED_MODALITIES.test(
+    (meta.get(CT.Modality) ?? '').trim().toUpperCase()
+  );
+}
+
 export interface Note {
   title: string;
   detail: string;
@@ -133,13 +145,20 @@ export const fmtMM = (v: number, digits = 2) =>
 export function seriesLabel(meta: Meta) {
   const number = (meta.get('0020|0011') ?? '').trim();
   const desc = (meta.get('0008|103e') ?? '').trim();
-  return [number && `Série ${number}`, desc].filter(Boolean).join(' · ') || 'Série';
+  return (
+    [number && `Série ${number}`, desc].filter(Boolean).join(' · ') || 'Série'
+  );
 }
 
 function stackKey(info: InstanceInfo) {
-  const r = (v: number, d: number) => (Math.round(v * 10 ** d) / 10 ** d).toFixed(d);
-  const iop = info.iop ? info.iop.map((v) => r(v, 3)).join(',') : 'sem-orientacao';
-  const ps = info.pixel ? info.pixel.map((v) => r(v, 4)).join(',') : 'sem-pixel';
+  const r = (v: number, d: number) =>
+    (Math.round(v * 10 ** d) / 10 ** d).toFixed(d);
+  const iop = info.iop
+    ? info.iop.map((v) => r(v, 3)).join(',')
+    : 'sem-orientacao';
+  const ps = info.pixel
+    ? info.pixel.map((v) => r(v, 4)).join(',')
+    : 'sem-pixel';
   return `${info.rows}x${info.cols}|${iop}|${ps}`;
 }
 
@@ -211,7 +230,12 @@ export function splitStack(infos: InstanceInfo[]): {
             dot(infos[a].ipp!, basis.normal) - dot(infos[b].ipp!, basis.normal)
         );
 
-    if (!hasDuplicatePositions(members.map((i) => infos[i]), basis.normal)) {
+    if (
+      !hasDuplicatePositions(
+        members.map((i) => infos[i]),
+        basis.normal
+      )
+    ) {
       parts.push(sortByT(members));
       return;
     }
@@ -230,7 +254,11 @@ export function splitStack(infos: InstanceInfo[]): {
       });
       if (byAttr.size < 2) continue;
       const ok = [...byAttr.values()].every(
-        (p) => !hasDuplicatePositions(p.map((i) => infos[i]), basis.normal)
+        (p) =>
+          !hasDuplicatePositions(
+            p.map((i) => infos[i]),
+            basis.normal
+          )
       );
       if (!ok) continue;
       notes.push({
@@ -279,7 +307,7 @@ export function refineVolumes<T>(
   const out: Record<string, T[]> = {};
   Object.entries(volumes).forEach(([id, items]) => {
     const metas = items.map((it) => metaOf(it));
-    if (items.length <= 1 || metas.some((m) => !m)) {
+    if (items.length <= 1 || metas.some((m) => !m || !geometryManaged(m))) {
       out[id] = items;
       return;
     }
@@ -339,8 +367,12 @@ export type PlanResult = { plan: StackPlan } | { error: string };
 export function planStack(input: PlanInput): PlanResult {
   const { positions, iop, pixel, rows, cols } = input;
   const basis = basisFromIOP(iop);
-  if (!basis) return { error: 'Orientação da imagem (IOP) ausente ou inválida.' };
-  if (!positions.length || positions.some((p) => !p || p.length !== 3 || !p.every(Number.isFinite)))
+  if (!basis)
+    return { error: 'Orientação da imagem (IOP) ausente ou inválida.' };
+  if (
+    !positions.length ||
+    positions.some((p) => !p || p.length !== 3 || !p.every(Number.isFinite))
+  )
     return { error: 'Posição de corte (IPP) ausente ou inválida.' };
   const [sx, sy] = pixel;
   const n = positions.length;
@@ -379,7 +411,8 @@ export function planStack(input: PlanInput): PlanResult {
 
   const deltas = t.slice(1).map((x, k) => x - t[k]);
   const sortedDeltas = deltas.slice().sort((a, b) => a - b);
-  const median = n > 1 ? sortedDeltas[Math.floor((sortedDeltas.length - 1) / 2)] : 1;
+  const median =
+    n > 1 ? sortedDeltas[Math.floor((sortedDeltas.length - 1) / 2)] : 1;
   const gaps: StackPlan['gaps'] = [];
   deltas.forEach((d, k) => {
     if (d > 1.5 * median) gaps.push({ from: t[k], to: t[k + 1], size: d });
@@ -392,12 +425,17 @@ export function planStack(input: PlanInput): PlanResult {
     if (mx - mn > tolT) irregular = { min: mn, max: mx };
   }
   const tiltDeg =
-    n > 1 ? (Math.atan2(Math.hypot(u[n - 1], v[n - 1]), span) * 180) / Math.PI : 0;
+    n > 1
+      ? (Math.atan2(Math.hypot(u[n - 1], v[n - 1]), span) * 180) / Math.PI
+      : 0;
 
   // espaçamento de saída: o do exame quando uniforme; senão o menor intervalo regular
   let sz = step;
   if (uneven && n > 1) {
-    sz = Math.max(regular.length ? Math.min(...regular) : median, 0.25 * median);
+    sz = Math.max(
+      regular.length ? Math.min(...regular) : median,
+      0.25 * median
+    );
     if (span / sz + 1 > 4 * n + 16) sz = span / (4 * n);
   }
   const nz = n > 1 ? Math.floor(span / sz + 1e-6) + 1 : 1;
@@ -486,7 +524,7 @@ export function planStack(input: PlanInput): PlanResult {
 
 /** Plano para um grupo de instâncias já ordenado pelo VolView/CatStudio. */
 export function planForMetas(metas: Meta[]): PlanResult | null {
-  if (!metas.length) return null;
+  if (!metas.length || metas.some((m) => !geometryManaged(m))) return null;
   const first = instanceInfo(metas[0]);
   if (!first.iop || !first.pixel) return null;
   if (metas.length === 1) {
@@ -499,7 +537,8 @@ export function planForMetas(metas: Meta[]): PlanResult | null {
     } catch {
       return null;
     }
-    if (!Array.isArray(positions) || positions.length !== first.frames) return null;
+    if (!Array.isArray(positions) || positions.length !== first.frames)
+      return null;
     return planStack({
       positions,
       iop: first.iop,

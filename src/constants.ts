@@ -161,26 +161,31 @@ export type WindowingAutoRanges = Record<
 export const WL_AUTO_DEFAULT = 'FullRange';
 export const WL_HIST_BINS = 512;
 
+// CatStudio: janelas de TC usadas no dia a dia (rótulos em português)
 export const WLPresetsCT = {
-  Bones: {
-    width: 1000,
-    level: 400,
-  },
-  Air: {
-    width: 1000,
-    level: -426,
-  },
-  SoftTissue: {
-    width: 350,
-    level: 50,
-  },
-  Lungs: {
+  Pulmão: {
     width: 1500,
     level: -600,
   },
-  Brain: {
+  Mediastino: {
+    width: 350,
+    level: 40,
+  },
+  'Partes moles': {
+    width: 400,
+    level: 50,
+  },
+  Osso: {
+    width: 1800,
+    level: 400,
+  },
+  Cérebro: {
     width: 80,
     level: 40,
+  },
+  'Vias aéreas': {
+    width: 1000,
+    level: -426,
   },
 };
 

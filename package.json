@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "prepare": "node scripts/apply-patches.mjs",
-    "dev": "cross-env VITE_SHOW_SAMPLE_DATA=true vite",
+    "dev": "vite",
     "preview": "vite preview",
     "serve": "npm run dev",
     "prebuild": "patch-package --error-on-fail",

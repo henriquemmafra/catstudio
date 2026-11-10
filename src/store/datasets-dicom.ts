@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { pseudonymizePatient, scrubStudy } from '@/src/catstudio/privacy';
 import { Image } from 'itk-wasm';
 import * as DICOM from '@/src/io/dicom';
 import { Chunk } from '@/src/core/streaming/chunk';
@@ -213,7 +214,12 @@ export const useDICOMStore = defineStore('dicom', {
             kind: 'volume',
           };
 
-          this._updateDatabase(patientInfo, studyInfo, volumeInfo);
+          // CatStudio: identificação do paciente nunca vai para a interface
+          this._updateDatabase(
+            pseudonymizePatient(patientInfo),
+            scrubStudy(studyInfo),
+            volumeInfo
+          );
 
           // save the image name
           image.setName(getDisplayName(volumeInfo));
@@ -273,7 +279,12 @@ export const useDICOMStore = defineStore('dicom', {
         kind: 'cine',
       };
 
-      this._updateDatabase(patient, study, volumeInfo);
+      // CatStudio: identificação do paciente nunca vai para a interface
+      this._updateDatabase(
+        pseudonymizePatient(patient),
+        scrubStudy(study),
+        volumeInfo
+      );
 
       image.setName(getDisplayName(volumeInfo));
       return true;
