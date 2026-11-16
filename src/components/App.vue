@@ -26,6 +26,8 @@
           </div>
         </v-main>
         <controls-modal />
+        <!-- CatStudio: área de trabalho do Ostium (laudo coronário) -->
+        <ostium-workspace />
       </v-app>
       <persistent-overlay
         :disabled="!dragHover"
@@ -70,6 +72,7 @@ import ModulePanel from '@/src/components/ModulePanel.vue';
 import DragAndDrop from '@/src/components/DragAndDrop.vue';
 import PersistentOverlay from '@/src/components/PersistentOverlay.vue';
 import ControlsModal from '@/src/components/ControlsModal.vue';
+import OstiumWorkspace from '@/src/ostium/OstiumWorkspace.vue';
 import { useImageStore } from '@/src/store/datasets-images';
 import { useServerStore } from '@/src/store/server';
 import { useGlobalErrorHook } from '@/src/composables/useGlobalErrorHook';
@@ -95,6 +98,7 @@ export default defineComponent({
     ModulePanel,
     PersistentOverlay,
     ControlsModal,
+    OstiumWorkspace,
     WelcomePage,
     AppBar,
     VtkRenderWindowParent,

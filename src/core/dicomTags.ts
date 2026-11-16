@@ -44,6 +44,11 @@ const tags: Tag[] = [
   { name: 'PhysicalUnitsYDirection', tag: '0018|6026' },
   { name: 'PhysicalDeltaX', tag: '0018|602c' },
   { name: 'PhysicalDeltaY', tag: '0018|602e' },
+  // CatStudio/Ostium (escore de cálcio): conferência técnica e percentil por idade
+  { name: 'SliceThickness', tag: '0018|0050' },
+  { name: 'KVP', tag: '0018|0060' },
+  { name: 'PatientAge', tag: '0010|1010' },
+  { name: 'ContrastBolusAgent', tag: '0018|0010' },
 ];
 
 // DICOM SOP Class UIDs for Ultrasound Multi-frame Image Storage. The current
