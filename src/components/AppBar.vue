@@ -5,6 +5,7 @@ import CloseableDialog from '@/src/components/CloseableDialog.vue';
 import AboutBox from '@/src/components/AboutBox.vue';
 import CatStudioLogo from '@/src/catstudio/components/CatStudioLogo.vue';
 import { useKeyboardShortcutsStore } from '@/src/store/keyboard-shortcuts';
+import { ostiumOpen } from '@/src/ostium/state';
 
 const emit = defineEmits(['click:left-menu']);
 
@@ -19,6 +20,19 @@ const keyboardStore = useKeyboardShortcutsStore();
     <v-toolbar-title class="d-flex flex-row align-center">
       <CatStudioLogo :compact="mobile" />
     </v-toolbar-title>
+    <!-- CatStudio: abre o Ostium (laudo coronário) sobre as imagens -->
+    <v-btn
+      variant="tonal"
+      prepend-icon="mdi-heart-pulse"
+      class="mr-2"
+      data-testid="open-ostium"
+      @click="ostiumOpen = true"
+    >
+      Laudo coronário
+      <v-tooltip activator="parent" location="bottom">
+        Ostium: escore de cálcio, mapa coronário e laudo
+      </v-tooltip>
+    </v-btn>
     <v-btn
       variant="text"
       icon

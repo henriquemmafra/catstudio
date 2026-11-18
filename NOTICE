@@ -8,7 +8,8 @@ Este produto é uma obra derivada do VolView:
   (VolView commit 95f8a8cb3d901c1d8cab58a15e1dd58875a08480).
 
 Alterações feitas pelo CatStudio (Apache 2.0, §4b):
-  Arquivos novos: src/catstudio/**, catstudio-testes/**, public/catstudio.svg,
+  Arquivos novos: src/catstudio/**, src/ostium/**, catstudio-testes/**,
+  public/catstudio.svg,
   .github/workflows/pages.yml, iniciar-local.bat, NOTICE.
   Arquivos do VolView modificados (cada trecho alterado está marcado com
   "CatStudio" em comentário, exceto textos de interface traduzidos):
@@ -20,6 +21,7 @@ Alterações feitas pelo CatStudio (Apache 2.0, §4b):
       VolumePresets.vue, VolumeProperties.vue, VolumeViewer.vue,
       WelcomePage.vue, tools/windowing/WindowLevelControls.vue,
     src/constants.ts,
+    src/core/dicomTags.ts,
     src/components/PatientBrowser.vue,
     src/composables/untilLoaded.ts,
     src/core/streaming/dicom/dicomFileMetaLoader.ts,
@@ -37,3 +39,5 @@ O VolView usa vtk.js (BSD-3-Clause) e itk-wasm (Apache 2.0), entre outras
 dependências listadas em package.json/package-lock.json, cada uma sob a sua
 própria licença. Os presets de renderização volumétrica vêm do
 VolView/ParaView/3D Slicer.
+
+O Ostium (src/ostium) usa three.js (MIT) no mapa coronário 3D.

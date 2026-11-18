@@ -36,6 +36,31 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
    livre, segmentação e "Salvar sessão" (arquivo local).
 8. Avisos de geometria (tilt, lacuna, série dividida) aparecem no sino.
 
+## Ostium — laudo coronário
+
+O botão **Laudo coronário** (barra superior) abre o Ostium sobre as imagens:
+pré-laudo de angio-TC de coronárias e escore de cálcio, com texto puro pronto
+para colar no sistema de laudos.
+
+- **Escore de cálcio na imagem**: selecione no CatStudio a série do escore
+  (sem contraste, 3 mm) e clique em **Ler série aberta**. Os focos ≥ 130 UH
+  aparecem realçados; escolha o vaso (teclas 1–4) e clique no foco (pega o
+  foco inteiro) ou arraste para contornar só uma parte (laço). Ctrl+Z desfaz.
+  Agatston por vaso, CAC-DRS e percentil MESA entram no laudo na hora. Osso
+  não vira candidato; nada conta até ser atribuído a um vaso.
+- **Mapa coronário** em 3D e planificado: clique no ponto do vaso onde está
+  a placa; o segmento citado no laudo é deduzido da posição. É um mapa
+  esquemático, não a anatomia do paciente.
+- **Laudo ao vivo**: só o que foi marcado entra no texto; passar o mouse
+  numa frase destaca o achado de origem.
+
+Limites atuais: o vaso de cada foco de cálcio é escolhido por você (ainda sem
+sugestão automática); o percentil MESA usa uma tabela provisória, a validar
+contra a calculadora oficial; a árvore coronária ainda não é extraída do
+exame. Testes: `python3 catstudio-testes/make_calcio.py` gera o fantoma e
+`test_ostium.py` confere o Agatston contra o valor analítico; os 32 testes
+unitários do cálculo e do texto ficam em `src/ostium/core/__tests__`.
+
 ## O que o CatStudio acrescenta ao VolView
 
 - **Geometria DICOM verificada**: gantry inclinado, lacunas e espaçamento
@@ -98,6 +123,7 @@ Testes:
 npx vitest run src/catstudio                     # unitários do CatStudio
 pip install -r catstudio-testes/requirements.txt
 python3 catstudio-testes/make_fixtures.py        # gera os fantomas DICOM
+python3 catstudio-testes/make_calcio.py          # fantoma do escore de cálcio (rode depois do make_fixtures, que recria .data)
 python3 catstudio-testes/make_exame_grande.py    # opcional: exame de ~1 GB (teste de memória)
 python3 -m pytest catstudio-testes -v            # ponta a ponta (usa dist/)
 CATSTUDIO_URL=https://henriquemmafra.github.io/catstudio/ python3 -m pytest catstudio-testes
