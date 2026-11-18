@@ -147,6 +147,13 @@ input[type=range] { width: 100%; accent-color: var(--ivory); }
 .tag { font: 500 10px var(--f-label); border: 1px solid var(--line); color: var(--ink-3); border-radius: 999px; padding: 2px 8px; letter-spacing: .06em; text-transform: uppercase; }
 
 #reportcol { background: var(--panel); }
+#statebar { margin: 10px 14px 0; border-radius: 8px; padding: 9px 12px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12.5px; flex: none; }
+#statebar[style*="none"] { display: none; }
+#statebar.example { background: rgba(255,74,74,.14); border: 1.5px solid var(--danger); color: #ffd0d0; }
+#statebar.example strong { color: var(--danger); letter-spacing: .06em; }
+#statebar.restored { background: rgba(243,200,79,.1); border: 1.5px solid var(--warn); color: var(--warn); }
+#statebar span { flex: 1 1 220px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
 #warnbox { margin: 10px 14px 0; background: rgba(243,200,79,.09); border: 1px solid rgba(243,200,79,.32); border-radius: 8px; padding: 7px 10px; color: var(--warn); font-size: 11.5px; flex: none; }
 #warnbox ul { margin: 3px 0 0; padding-left: 16px; }
 #report { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px 20px; font: 12.5px/1.62 var(--f-mono); }

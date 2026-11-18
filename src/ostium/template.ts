@@ -3,7 +3,7 @@ export const TEMPLATE = `
 <header>
   <div class="brand">
     <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#f2ead3" stroke-width="2"/><circle cx="5.2" cy="14.5" r="2.6" fill="#0a1a38" stroke="#f2ead3" stroke-width="1.6"/><circle cx="18.6" cy="13" r="2.6" fill="#0a1a38" stroke="#f2ead3" stroke-width="1.6"/></svg>
-    Ostium <small>laudo coronário · v0.5</small>
+    Ostium <small>laudo coronário · v0.5.1</small>
   </div>
   <div class="pipeline" id="pipeline"></div>
   <div class="hspace"></div>
@@ -75,6 +75,7 @@ export const TEMPLATE = `
   </section>
   <section class="col" id="reportcol">
     <div class="colhead"><h2>Laudo</h2><span class="tag">texto puro · AGFA</span><span class="sp"></span><button class="btn primary" id="copy">Copiar laudo</button></div>
+    <div id="statebar" style="display:none"></div>
     <div id="warnbox"><strong>Avisos, não entram no laudo</strong><ul id="warnings"></ul></div>
     <div id="report"></div>
     <div class="status" id="status"></div>

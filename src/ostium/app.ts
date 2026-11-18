@@ -138,7 +138,26 @@ let scene3: CoronaryScene | null = null;
 let lastLines: string[] = [];
 
 const STORE = 'ostium.v03';
+/** Os achados na tela são de um exemplo fictício (nunca de um exame aberto). */
+let isExample = false;
+/** Os achados vieram da última sessão neste navegador (podem ser de outro paciente). */
+let restored = false;
+const hasFindings = () =>
+  S.plaques.length > 0 ||
+  Object.keys(S.limited).length > 0 ||
+  Object.values(S.additional).some(Boolean) ||
+  Object.values(S.cac).some((v) => v > 0);
+function startBlank() {
+  S = fresh();
+  sel = null;
+  lastLines = [];
+  isExample = false;
+  restored = false;
+  cacFromImage = false;
+  cacWarnings = [];
+}
 function save() {
+  if (isExample) return; // exemplo não é trabalho do usuário: não guarda
   try {
     localStorage.setItem(STORE, JSON.stringify({ S, uid }));
   } catch {
@@ -789,9 +808,11 @@ function useOpenSeries() {
       : 'Nenhum exame aberto. Volte ao CatStudio, abra a pasta do exame e selecione a série do escore de cálcio.';
     return;
   }
+  // exame lido agora: achados de exemplo ou de sessão anterior nunca se misturam com ele
+  if (isExample || restored) startBlank();
   calcView?.destroy();
   calcView = null;
-  renderMaps();
+  changed();
   $('#cacstatus').textContent = 'Detectando focos ≥ 130 UH…';
   setTimeout(() => {
     try {
@@ -1420,6 +1441,56 @@ function renderReport() {
           : null
       )
     );
+  const bar = $('#statebar');
+  bar.style.display = isExample || restored ? '' : 'none';
+  bar.className = isExample ? 'example' : 'restored';
+  bar.replaceChildren(
+    ...([
+      h(
+        'strong',
+        {},
+        isExample ? 'EXEMPLO FICTÍCIO' : 'Achados da sessão anterior'
+      ),
+      h(
+        'span',
+        {},
+        isExample
+          ? 'Estes achados não são de nenhum exame. Servem só para mostrar o programa.'
+          : 'Estes achados ficaram salvos neste navegador e podem ser de outro paciente.'
+      ),
+      isExample
+        ? null
+        : h(
+            'button',
+            {
+              class: 'btn',
+              type: 'button',
+              onclick: () => {
+                restored = false;
+                renderReport();
+              },
+            },
+            'Continuar com eles'
+          ),
+      h(
+        'button',
+        {
+          class: 'btn primary',
+          type: 'button',
+          onclick: () => {
+            startBlank();
+            changed();
+          },
+        },
+        'Começar em branco'
+      ),
+    ].filter(Boolean) as Node[])
+  );
+  const copyBtn = $<HTMLButtonElement>('#copy');
+  copyBtn.disabled = isExample;
+  copyBtn.title = isExample
+    ? 'Exemplo fictício: não pode ser copiado como laudo'
+    : '';
   const warn = [...r.warnings];
   if (
     S.kind !== 'angio' &&
@@ -1582,6 +1653,10 @@ async function detectHardware() {
 // ------------------------------------------------------------------ exemplos
 function example(name: string) {
   S = fresh();
+  isExample = true;
+  restored = false;
+  cacFromImage = false;
+  cacWarnings = [];
   const pl = (
     vessel: string,
     t: number,
@@ -1713,14 +1788,10 @@ export function mountOstium(root: HTMLElement, host: OstiumHost) {
     s.value = '';
   });
   $('#reset').addEventListener('click', () => {
-    S = fresh();
-    sel = null;
-    lastLines = [];
+    startBlank();
     calcView?.destroy();
     calcView = null;
     loadedKey = null;
-    cacFromImage = false;
-    cacWarnings = [];
     if (mapView === 'calcio') mapView = '3d';
     changed();
   });
@@ -1765,7 +1836,7 @@ export function mountOstium(root: HTMLElement, host: OstiumHost) {
       renderCalcBar();
     }
   });
-  if (load()) changed();
-  else example('doente'); // primeira abertura: estado realista, carregado do exemplo
+  if (load()) restored = hasFindings();
+  changed(); // abre em branco: exemplo só quando o usuário pede, e sempre marcado como exemplo
   void detectHardware();
 }
