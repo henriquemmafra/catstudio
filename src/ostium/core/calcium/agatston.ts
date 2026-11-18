@@ -195,76 +195,93 @@ export function findIslands(
     1,
     Math.ceil(MIN_LESION_AREA_MM2 / pixelArea - 1e-9)
   );
-  const stack: number[] = [];
+  // Pilha em vetor tipado e estatísticas acumuladas durante a varredura: memória constante por voxel,
+  // mesmo quando o "foco" é a coluna inteira ou uma câmara cheia de contraste.
+  let stack = new Int32Array(1 << 16);
+  const perSlice = new Int32Array(slices);
   let nextId = 1;
 
   for (let i = 0; i < n; i++) {
     if (map[i] || hu[i]! < HU_THRESHOLD || (roi && !roi[i])) continue;
-    const id = nextId++;
-    const members: number[] = [];
-    stack.push(i);
+    const id = nextId;
+    let sp = 0,
+      count = 0,
+      peak = -Infinity,
+      sx = 0,
+      sy = 0,
+      sz = 0;
+    let x0 = cols,
+      x1 = -1,
+      y0 = rows,
+      y1 = -1,
+      z0 = slices,
+      z1 = -1;
+    stack[sp++] = i;
     map[i] = id;
-    while (stack.length) {
-      const q = stack.pop()!;
-      members.push(q);
-      const z = Math.floor(q / sliceSize),
+    while (sp > 0) {
+      const q = stack[--sp]!;
+      const z = (q / sliceSize) | 0,
         r = q - z * sliceSize,
-        y = Math.floor(r / cols),
+        y = (r / cols) | 0,
         x = r - y * cols;
+      count++;
+      perSlice[z]!++;
+      sx += x;
+      sy += y;
+      sz += z;
+      const h = hu[q]!;
+      if (h > peak) peak = h;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+      if (z < z0) z0 = z;
+      if (z > z1) z1 = z;
       for (let dz = -1; dz <= 1; dz++) {
         const nz = z + dz;
         if (nz < 0 || nz >= slices) continue;
         for (let dy = -1; dy <= 1; dy++) {
           const ny = y + dy;
           if (ny < 0 || ny >= rows) continue;
+          const base = nz * sliceSize + ny * cols;
           for (let dx = -1; dx <= 1; dx++) {
             const nx = x + dx;
             if (nx < 0 || nx >= cols) continue;
-            const j = nz * sliceSize + ny * cols + nx;
+            const j = base + nx;
             if (map[j] || hu[j]! < HU_THRESHOLD || (roi && !roi[j])) continue;
             map[j] = id;
-            stack.push(j);
+            if (sp === stack.length) {
+              const bigger = new Int32Array(stack.length * 2);
+              bigger.set(stack);
+              stack = bigger;
+            }
+            stack[sp++] = j;
           }
         }
       }
     }
-    // maior área num único corte
-    const perSlice = new Map<number, number>();
-    let peak = -Infinity,
-      sx = 0,
-      sy = 0,
-      sz = 0;
-    const mn: [number, number, number] = [Infinity, Infinity, Infinity],
-      mx: [number, number, number] = [-1, -1, -1];
-    for (const q of members) {
-      const z = Math.floor(q / sliceSize),
-        r = q - z * sliceSize,
-        y = Math.floor(r / cols),
-        x = r - y * cols;
-      perSlice.set(z, (perSlice.get(z) ?? 0) + 1);
-      if (hu[q]! > peak) peak = hu[q]!;
-      sx += x;
-      sy += y;
-      sz += z;
-      mn[0] = Math.min(mn[0], x);
-      mn[1] = Math.min(mn[1], y);
-      mn[2] = Math.min(mn[2], z);
-      mx[0] = Math.max(mx[0], x);
-      mx[1] = Math.max(mx[1], y);
-      mx[2] = Math.max(mx[2], z);
+    let maxArea = 0;
+    for (let z = z0; z <= z1; z++) {
+      if (perSlice[z]! > maxArea) maxArea = perSlice[z]!;
+      perSlice[z] = 0;
     }
-    if (Math.max(...perSlice.values()) < minPixels) {
-      for (const q of members) map[q] = -1; // ruído: marcado para não revisitar
-      nextId--;
+    if (maxArea < minPixels) {
+      // ruído: marca para não revisitar (a caixa de um ponto de ruído é minúscula)
+      for (let z = z0; z <= z1; z++)
+        for (let y = y0; y <= y1; y++) {
+          const base = z * sliceSize + y * cols;
+          for (let x = x0; x <= x1; x++)
+            if (map[base + x] === id) map[base + x] = -1;
+        }
       continue;
     }
-    const k = members.length;
+    nextId++;
     islands.push({
       id,
-      voxelCount: k,
+      voxelCount: count,
       peakHU: peak,
-      centroid: [sx / k, sy / k, sz / k],
-      bbox: { min: mn, max: mx },
+      centroid: [sx / count, sy / count, sz / count],
+      bbox: { min: [x0, y0, z0], max: [x1, y1, z1] },
     });
   }
   for (let i = 0; i < n; i++) if (map[i] === -1) map[i] = 0;
