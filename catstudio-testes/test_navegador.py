@@ -335,7 +335,77 @@ def test_renderizacao_3d_e_exportacao_png(session, tmp_path):
 BIG = os.path.join(DATA, "exame_grande")
 
 
-@pytest.mark.skipif(not os.path.isdir(BIG), reason="rode make_exame_grande.py para gerar o exame completo")
+needs_big = pytest.mark.skipif(not os.path.isdir(BIG), reason="rode make_exame_grande.py para gerar o exame completo")
+
+
+def _open_big(session, sample=None):
+    """Abre a pasta do exame completo e espera a lista de séries (triagem)."""
+    page = session.page
+    with page.expect_file_chooser() as fc:
+        page.get_by_test_id("welcome-open-folder").click()
+    fc.value.set_files(BIG)
+    dialog = page.get_by_test_id("series-triage")
+    t0 = time.time()
+    while not dialog.is_visible():
+        assert time.time() - t0 < 120, "a lista de séries não apareceu"
+        if sample:
+            sample()
+        page.wait_for_timeout(500)
+    return dialog
+
+
+def _descriptions(session):
+    return session.page.evaluate(f"""() => {{ const p = {PINIA}; const d = p._s.get('dicom');
+        const shown = new Set(Object.values(p._s.get('view').viewByID).map(v => v.dataID).filter(Boolean));
+        return Object.entries(d.volumeInfo).map(([id, v]) => ({{desc: (v.SeriesDescription || '').trim(), shown: shown.has(id)}})); }}""")
+
+
+@needs_big
+def test_triagem_sugere_a_serie_e_carrega_so_a_escolhida(session):
+    """Exame grande: antes de carregar, aparece a lista de séries com a
+    sugerida marcada. Confirmar carrega só ela, e o 3D usa a cópia reduzida."""
+    page = session.page
+    dialog = _open_big(session)
+    items = dialog.get_by_test_id("series-triage-item")
+    assert items.count() == 7
+    assert not session.state(), "nada deve carregar antes da escolha"
+    suggested = [items.nth(i).inner_text() for i in range(7) if "Sugerida" in items.nth(i).inner_text()]
+    assert len(suggested) == 1 and "Fase arterial" in suggested[0], suggested
+    assert "1 série" in page.get_by_test_id("series-triage-confirm").inner_text().lower()
+    page.get_by_test_id("series-triage-confirm").click()
+    session.wait_loaded(timeout=400)
+    st = session.state()
+    assert len(st) == 1 and st[0]["shown"] and st[0]["st"] == "complete", st
+    assert [d["desc"] for d in _descriptions(session)] == ["Fase arterial 1 mm"]
+    # 3D: modo leve por padrão sem placa de vídeo, volume de 105 M de voxels reduzido
+    assert page.evaluate("localStorage.getItem('catstudio.desempenho')") is None
+    page.wait_for_timeout(3000)
+    std, _ = _image_std(page.get_by_test_id("vtk-view vtk-volume-view").first.screenshot())
+    assert std > 5, "vista 3D vazia"
+    # o seletor de desempenho fica no painel de renderização e guarda a escolha
+    page.get_by_text("Renderização", exact=True).first.click()
+    page.get_by_test_id("performance-select").wait_for(timeout=20000)
+    page.get_by_test_id("performance-equilibrado").click()
+    assert page.evaluate("localStorage.getItem('catstudio.desempenho')") == "equilibrado"
+    page.get_by_test_id("performance-leve").click()
+    assert page.evaluate("localStorage.getItem('catstudio.desempenho')") == "leve"
+    session.wait_idle()
+    std, _ = _image_std(page.get_by_test_id("vtk-view vtk-volume-view").first.screenshot())
+    assert std > 5, "vista 3D vazia depois de trocar o desempenho"
+    assert not session.errors, session.errors
+
+
+@needs_big
+def test_triagem_cancelar_volta_para_a_tela_inicial(session):
+    page = session.page
+    _open_big(session)
+    page.get_by_test_id("series-triage-cancel").click()
+    page.get_by_test_id("welcome-open-folder").wait_for(timeout=20000)
+    assert not session.state()
+    assert not session.errors, session.errors
+
+
+@needs_big
 def test_exame_completo_so_carrega_a_serie_exibida(session):
     """Pasta com 7 séries (~2000 imagens, ~1 GB): o VolView original derrubava a
     aba por falta de memória. Aqui só a série exibida é carregada, e trocar de
@@ -349,9 +419,8 @@ def test_exame_completo_so_carrega_a_serie_exibida(session):
         m = {x["name"]: x["value"] for x in cdp.send("Performance.getMetrics")["metrics"]}
         heap.append(m.get("JSHeapUsedSize", 0) / 1048576)
 
-    with page.expect_file_chooser() as fc:
-        page.get_by_test_id("welcome-open-folder").click()
-    fc.value.set_files(BIG)
+    _open_big(session, sample)
+    page.get_by_test_id("series-triage-all").click()
     t0 = time.time()
     while not session.state() and time.time() - t0 < 120:
         sample()
@@ -361,6 +430,8 @@ def test_exame_completo_so_carrega_a_serie_exibida(session):
     assert len(st) == 7
     assert sum(x["st"] == "complete" for x in st) == 1, st
     assert max(heap) < 400, f"heap JS chegou a {max(heap):.0f} MB na importação"
+    # abre primeiro a série sugerida, não a que tem mais imagens
+    assert [d["desc"] for d in _descriptions(session) if d["shown"]] == ["Fase arterial 1 mm"]
     first = next(x["id"] for x in st if x["shown"])
     # trocar de série: a nova vai para todas as vistas e a anterior sai da memória
     # WebGL por software: trocar a série re-renderiza tudo e trava a página por um tempo

@@ -26,6 +26,7 @@
           </div>
         </v-main>
         <controls-modal />
+        <series-triage />
       </v-app>
       <persistent-overlay
         :disabled="!dragHover"
@@ -83,6 +84,7 @@ import { defaultImageMetadata } from '@/src/core/progressiveImage';
 import VtkRenderWindowParent from '@/src/components/vtk/VtkRenderWindowParent.vue';
 import { useSyncWindowing } from '@/src/composables/useSyncWindowing';
 import { useMemoryPolicy } from '@/src/catstudio/memory';
+import SeriesTriage from '@/src/catstudio/components/SeriesTriage.vue';
 import { readLaunchParams } from '@/src/utils/urlParams';
 
 export default defineComponent({
@@ -95,6 +97,7 @@ export default defineComponent({
     ModulePanel,
     PersistentOverlay,
     ControlsModal,
+    SeriesTriage,
     WelcomePage,
     AppBar,
     VtkRenderWindowParent,

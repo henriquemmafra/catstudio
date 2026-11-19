@@ -21,7 +21,10 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
    WebGL2).
 2. **Abrir pasta do exame** (subpastas e arquivos sem extensão entram) ou
    **Abrir arquivos** (aceita .zip); também dá para arrastar e soltar.
-3. Na lateral, escolha a série. O layout padrão tem axial, coronal, sagital
+3. Em exame grande aparece a lista **Quais séries carregar?**, com tamanho,
+   espessura e plano de cada uma e a sugerida já marcada (cortes finos,
+   axial, com contraste). Só as marcadas entram; depois, na lateral, é só
+   clicar para trocar de série. O layout padrão tem axial, coronal, sagital
    e 3D.
 4. **Janela e nível** (ícone de meio círculo): Pulmão, Mediastino, Partes
    moles, Osso, Cérebro, Vias aéreas, janelas do próprio DICOM, automático
@@ -29,7 +32,8 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
 5. **Renderização → Renderização 3D**: presets (Osso, Esqueleto, Tórax com
    contraste, Artérias pulmonares, Coronárias, Pulmão, Vias aéreas, MIP…),
    editor de opacidade/cor e **Renderização cinematográfica** (qualidade,
-   oclusão ambiente, espalhamento, luz).
+   oclusão ambiente, espalhamento, luz). No alto do painel, **Desempenho do
+   3D**: Leve (padrão sem placa de vídeo dedicada), Equilibrado ou Máximo.
 6. No canto da vista 3D: recentralizar câmera e **exportar PNG** (só a
    imagem, sem textos nem dados do paciente).
 7. Recorte (ícone de crop), régua, cursor cruzado, layout oblíquo para MPR
@@ -48,6 +52,12 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
 - **Memória**: abre a pasta de um exame completo sem derrubar a aba — só a
   série exibida fica na memória (o VolView original carregava todas e caía
   com ~2000 imagens).
+- **Triagem de séries**: em exame grande, você escolhe o que carregar
+  antes de qualquer imagem ser lida, e a primeira série aberta é a mais
+  adequada ao 3D (o VolView abria a que tinha mais imagens).
+- **3D leve**: a vista 3D usa uma cópia reduzida do volume e, no modo Leve,
+  o 3D clássico sem sombras; as vistas 2D continuam na resolução original.
+  O VolView ligava o cinematográfico completo sobre o volume inteiro.
 - **Privacidade**: nome, ID e nascimento do paciente nunca aparecem (viram
   "Paciente 1"); sem telemetria, dados de exemplo ou serviços remotos; o
   teste automatizado falha se a página fizer qualquer requisição externa.
@@ -58,7 +68,7 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
 
 Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
 
-- **22 testes ponta a ponta no navegador** (`catstudio-testes/`): upload
+- **24 testes ponta a ponta no navegador** (`catstudio-testes/`): upload
   real pelos seletores de arquivo e de pasta, volume lido da aplicação e
   comparado voxel a voxel com um fantoma analítico — axial com pixel
   anisotrópico, implicit VR com sinal, aquisição coronal, oblíqua dupla,
@@ -70,10 +80,14 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   vazia e PNG exportado; nenhuma requisição externa; e um exame completo
   sintético (7 séries 512×512, ~2000 imagens, 1 GB) aberto pela pasta sem
   derrubar a aba, com só a série exibida na memória e a anterior liberada
-  ao trocar de série.
-- **Testes unitários**: 9 do módulo de geometria (campo linear reproduzido
+  ao trocar de série; nesse mesmo exame, a lista de séries com a sugerida
+  marcada, carregar só a escolhida, cancelar, e a vista 3D não vazia com o
+  volume reduzido.
+- **Testes unitários**: 12 da triagem de séries e do desempenho do 3D
+  (sugestão, redução por média de blocos na mesma posição do espaço) e 9
+  do módulo de geometria (campo linear reproduzido
   exatamente após reamostrar tilt, lacuna, irregular e quadros fora de
-  ordem; liberação de memória) dentro da suíte completa do projeto (2448
+  ordem; liberação de memória) dentro da suíte completa do projeto (2460
   passam; 1 falha só porque baixa um arquivo de data.kitware.com, sem
   acesso à internet no ambiente de teste).
 - **Não testado**: Windows/macOS reais, GPUs reais, exames clínicos reais

@@ -41,6 +41,15 @@ import {
   ChunkImage,
   type ChunkLoadedInfo,
 } from '@/src/core/streaming/chunkImage';
+import type vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
+import {
+  isReduced,
+  limitCvr,
+  performanceSettings,
+  reduceImage,
+  reductionFactors,
+  type Factors,
+} from '@/src/catstudio/performance';
 
 interface Props {
   viewId: string;
@@ -63,8 +72,51 @@ const coloringConfig = computed(() =>
   useVolumeColoringStore().getConfig(viewID.value, imageID.value)
 );
 
+// CatStudio: no modo leve/equilibrado, a vista 3D usa uma cópia reduzida do
+// volume (as vistas 2D continuam com o original). A cópia é montada quando o
+// volume termina de carregar; até lá o 3D fica vazio, em vez de reenviar a
+// textura inteira à placa de vídeo a cada corte que chega.
+const factors = computed<Factors>(() => {
+  const img = imageData.value;
+  if (!img) return [1, 1, 1];
+  return reductionFactors(
+    img.getDimensions(),
+    img.getSpacing(),
+    performanceSettings.mode
+  );
+});
+const reducedImage = shallowRef<vtkImageData | null>(null);
+const renderImage = computed(() =>
+  isReduced(factors.value) ? reducedImage.value : imageData.value
+);
+
 // setup base image
-const rep = useVolumeRepresentation(view, imageData);
+const rep = useVolumeRepresentation(view, renderImage);
+
+let reduceJob = 0;
+watch(
+  [imageData, isImageStreaming, factors],
+  async ([img, streaming, f]) => {
+    reduceJob += 1;
+    const job = reduceJob;
+    reducedImage.value = null;
+    if (!img || streaming || !isReduced(f)) return;
+    const out = await reduceImage(img, f, async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve);
+      });
+      return job === reduceJob;
+    });
+    if (job !== reduceJob || !out) return;
+    rep.property.setUpdatedExtents([]);
+    reducedImage.value = out;
+  },
+  { immediate: true }
+);
+onScopeDispose(() => {
+  reduceJob += 1;
+  reducedImage.value = null;
+});
 
 const cfun = vtkColorTransferFunction.newInstance();
 const ofun = vtkPiecewiseFunction.newInstance();
@@ -96,6 +148,8 @@ useEventListener(
 );
 
 watch(updatedExtents, (current, old) => {
+  // CatStudio: a cópia reduzida não recebe atualizações parciais
+  if (isReduced(factors.value)) return;
   const startOffset = old.length;
   rep.property.setUpdatedExtents([
     ...rep.property.getUpdatedExtents(),
@@ -105,14 +159,18 @@ watch(updatedExtents, (current, old) => {
 });
 
 // cinematic volume rendering
-const cvrParams = computed(() => coloringConfig.value?.cvr);
+// CatStudio: o modo de desempenho limita o que é usado, sem alterar o salvo
+const cvrParams = computed(() => {
+  const cvr = coloringConfig.value?.cvr;
+  return cvr ? limitCvr(cvr, performanceSettings.mode) : cvr;
+});
 const center = computed(() =>
   vtkBoundingBox.getCenter(imageMetadata.value.worldBounds)
 );
 const isAnimating = isViewAnimating(view);
 
 watchEffect(() => {
-  const img = imageData.value;
+  const img = renderImage.value;
   if (!cvrParams.value || !img) return;
 
   const {

@@ -1,3 +1,4 @@
+import { scoreOf } from '@/src/catstudio/triage';
 import { UrlParams } from '@vueuse/core';
 import {
   fileToDataSource,
@@ -69,6 +70,11 @@ function findBaseDicom(loadableDataSources: Array<LoadableResult>) {
       ) => {
         const priorityDiff = b - a;
         if (priorityDiff !== 0) return priorityDiff;
+        // CatStudio: abre primeiro a série mais adequada (cortes finos,
+        // axial, com contraste), não a que tem mais imagens
+        const scoreDiff =
+          (scoreOf(infoB.VolumeID) ?? 0) - (scoreOf(infoA.VolumeID) ?? 0);
+        if (scoreDiff !== 0) return scoreDiff;
         // same modality, then more slices preferred
         if (!infoA.NumberOfSlices) return 1;
         if (!infoB.NumberOfSlices) return -1;

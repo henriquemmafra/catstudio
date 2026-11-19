@@ -4,6 +4,7 @@ import { useVolumeColoringInitializer } from '@/src/composables/useVolumeColorin
 import { useCurrentImage } from '@/src/composables/useCurrentImage';
 import { CVRConfig } from '@/src/types/views';
 import useVolumeColoringStore from '@/src/store/view-configs/volume-coloring';
+import { performanceSettings } from '@/src/catstudio/performance';
 
 const LIGHTING_MODELS = {
   standard: 'Standard',
@@ -66,11 +67,20 @@ export default defineComponent({
       3: 'Ultra',
       4: 'Beta',
     };
+    // CatStudio: avisa quando o modo de desempenho ignora estes ajustes
+    const performanceNote = computed(() => {
+      if (performanceSettings.mode === 'leve')
+        return 'No desempenho Leve estes ajustes ficam desligados. Mude para Equilibrado ou Máximo para usá-los.';
+      if (performanceSettings.mode === 'equilibrado')
+        return 'No desempenho Equilibrado, oclusão ambiente e espalhamento ficam desligados e a qualidade vai até o nível 2.';
+      return '';
+    });
     const showQualityWarning = ref(false);
     const disableQualityWarning = ref(false);
 
     return {
       LIGHTING_MODELS,
+      performanceNote,
       cvrParams,
       disableQualityWarning,
       laoEnabled,
@@ -88,6 +98,15 @@ export default defineComponent({
 <template>
   <div class="mx-2">
     <div v-if="!!cvrParams">
+      <v-alert
+        v-if="performanceNote"
+        density="compact"
+        variant="tonal"
+        class="mb-4 text-caption"
+        data-testid="performance-note"
+      >
+        {{ performanceNote }}
+      </v-alert>
       <v-slider
         show-ticks="always"
         tick-size="4"

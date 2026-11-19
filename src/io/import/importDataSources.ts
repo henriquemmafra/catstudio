@@ -48,6 +48,7 @@ import { useDatasetStore } from '@/src/store/datasets';
 import { useDICOMStore } from '@/src/store/datasets-dicom';
 import { useMessageStore } from '@/src/store/messages';
 import { shouldSkipImportSource } from '@/src/io/import/shouldSkipImportSource';
+import { triageVolumes } from '@/src/catstudio/triage';
 
 const unhandledResource: ImportHandler = (dataSource) => {
   return asErrorResult(new Error('Failed to handle resource'), dataSource);
@@ -99,8 +100,17 @@ export function buildStateIDToStoreID(
 async function importDicomChunkSources(sources: ChunkSource[]) {
   if (sources.length === 0) return [];
 
+  // CatStudio: num exame grande, a pessoa escolhe as séries antes de
+  // carregar. Restaurar uma sessão salva nunca pergunta.
+  const restoring = sources.some((src) => findStateFileLeaves(src).length > 0);
   const volumeChunks = await useDICOMStore().importChunks(
-    sources.map((src) => src.chunk)
+    sources.map((src) => src.chunk),
+    (volumes) =>
+      triageVolumes(
+        volumes,
+        (chunk) => (chunk.metadata ? new Map(chunk.metadata) : null),
+        { ask: !restoring }
+      )
   );
 
   // this is used to reconstruct the ChunkSource list

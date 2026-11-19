@@ -13,6 +13,12 @@ import {
 } from '../utils/vtk-helpers';
 import { PresetNameList } from '../vtk/ColorMaps';
 import { logError } from '../utils/loggers';
+import {
+  factorsForBudget,
+  isReduced,
+  reduceImage,
+  THUMBNAIL_VOXEL_BUDGET,
+} from '../catstudio/performance';
 
 function resetOpacityFunction(
   pwfProxy: vtkPiecewiseFunctionProxy,
@@ -50,8 +56,12 @@ export function useVolumeThumbnailing(
   const thumbnailer = createThumbnailer(thumbnailSize);
   const currentThumbnails = ref<Record<string, string>>({});
 
-  const { currentImageMetadata, currentImageID, currentImageData } =
-    useCurrentImage();
+  const {
+    currentImageMetadata,
+    currentImageID,
+    currentImageData,
+    isImageLoading,
+  } = useCurrentImage();
 
   // same as 3D view
   const { cameraDirVec, cameraUpVec } = useCameraOrientation(
@@ -68,11 +78,29 @@ export function useVolumeThumbnailing(
   // captures finish on a timer, so deletion waits for the in-flight ones
   const inFlightCaptures = new Set<Promise<string>>();
 
-  async function doThumbnailing(imageID: string, image: vtkImageData) {
+  async function doThumbnailing(imageID: string, fullImage: vtkImageData) {
     if (interruptSentinel === UNMOUNTED) return;
 
     const localSentinel = Symbol('interrupt');
     interruptSentinel = localSentinel;
+
+    // CatStudio: as miniaturas usam uma cópia bem reduzida do volume. O
+    // original enviava o volume inteiro a um segundo contexto WebGL (o dobro
+    // de memória de vídeo) e o renderizava uma vez por preset.
+    const factors = factorsForBudget(
+      fullImage.getDimensions(),
+      fullImage.getSpacing(),
+      THUMBNAIL_VOXEL_BUDGET
+    );
+    const image = isReduced(factors)
+      ? ((await reduceImage(fullImage, factors, async () => {
+          await new Promise((resolve) => {
+            setTimeout(resolve);
+          });
+          return interruptSentinel === localSentinel;
+        })) ?? fullImage)
+      : fullImage;
+    if (interruptSentinel !== localSentinel) return;
 
     thumbnailer.setInputImage(image);
     const imageDataRange = image.getPointData().getScalars().getRange();
@@ -158,11 +186,13 @@ export function useVolumeThumbnailing(
   });
 
   // trigger thumbnailing
+  // CatStudio: espera o volume terminar de carregar (antes as miniaturas
+  // eram feitas com o volume ainda vazio)
   watch(
-    currentImageID,
-    (imageID) => {
-      if (imageID) {
-        doThumbnailing(imageID, currentImageData.value!);
+    [currentImageID, isImageLoading],
+    ([imageID, loading]) => {
+      if (imageID && !loading && currentImageData.value) {
+        doThumbnailing(imageID, currentImageData.value);
       }
     },
     { immediate: true }

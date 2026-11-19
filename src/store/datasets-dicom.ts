@@ -149,14 +149,21 @@ export const useDICOMStore = defineStore('dicom', {
     needsRebuild: {},
   }),
   actions: {
-    async importChunks(chunks: Chunk[]) {
+    async importChunks(
+      chunks: Chunk[],
+      // CatStudio: triagem de séries (escolher o que carregar)
+      select?: (
+        volumes: Record<string, Chunk[]>
+      ) => Promise<Record<string, Chunk[]>>
+    ) {
       const imageCacheStore = useImageCacheStore();
 
       // split into groups
-      const chunksByVolume = await DICOM.splitAndSort(
+      const allVolumes = await DICOM.splitAndSort(
         chunks,
         (chunk) => chunk.metaBlob!
       );
+      const chunksByVolume = select ? await select(allVolumes) : allVolumes;
 
       await Promise.all(
         Object.entries(chunksByVolume).map(async ([id, sortedChunks]) => {

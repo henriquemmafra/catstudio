@@ -103,6 +103,53 @@ Resultado no mesmo exame (Chrome headless, WebGL por software): sem queda,
 heap JavaScript < 50 MB na importação (antes 1,1 GB), processo da página em
 ~1 GB com a série de 400 cortes aberta, importação de ~60 s para ~6 s.
 
+### 2b. Triagem de séries (`src/catstudio/triage.ts`)
+
+Com a memória resolvida, o que ainda travava num exame de verdade era a
+escolha automática: o VolView exibe a série com mais imagens, que costuma
+ser a pior para o 3D (tórax inteiro em cortes finos, pilha de fases).
+
+- Depois de ler os cabeçalhos e separar as pilhas, cada uma é resumida
+  (modalidade, plano, número de imagens, matriz, distância entre cortes
+  medida nas posições, tamanho descompactado) e recebe uma nota: cortes
+  finos e plano axial somam; descrição com angio/coronárias/arterial soma;
+  MIP/MPR/3D prontos, cálcio/sem contraste e filtro de pulmão/osso
+  subtraem. Localizador, captura de tela, relatório de dose e séries com
+  menos de 20 imagens ficam marcados como auxiliares.
+- Se o exame tem mais de uma série e passa de 200 MB, aparece a lista
+  "Quais séries carregar?" com a de maior nota marcada. As não escolhidas
+  não entram (nem na lista lateral). Exame pequeno segue direto.
+- Com ou sem lista, a primeira série exibida passa a ser a de maior nota.
+- A nota é só uma sugestão baseada em texto e geometria do cabeçalho; não
+  foi calibrada com exames reais. Restaurar uma sessão salva nunca pergunta.
+
+### 2c. Desempenho do 3D (`src/catstudio/performance.ts`)
+
+O VolView liga a renderização cinematográfica completa (sombras e oclusão
+ambiente com 75 amostras extras por ponto) sobre o volume inteiro, reenvia
+a textura 3D à placa de vídeo a cada corte que chega e, ao abrir os presets,
+envia o volume inteiro a um segundo contexto WebGL.
+
+| Modo        | Volume no 3D       | Iluminação                                  |
+| ----------- | ------------------ | ------------------------------------------- |
+| Leve        | até ~24 M voxels   | 3D clássico (sombreamento por gradiente)    |
+| Equilibrado | até ~64 M voxels   | sombras; sem oclusão ambiente/espalhamento  |
+| Máximo      | inteiro            | como configurado no painel                  |
+
+- O modo inicial vem da placa de vídeo (dedicada ou Apple Silicon:
+  Equilibrado; integrada, desconhecida ou por software: Leve) e a escolha
+  fica guardada no navegador.
+- A cópia reduzida é a média de blocos inteiros, reduzindo sempre o eixo de
+  voxel mais fino (uma angio-TC 512×512×300 de 0,4×0,4×0,5 mm vira
+  256×256×300), na mesma posição do espaço. É montada quando o volume
+  termina de carregar; até lá a vista 3D fica vazia. As vistas 2D, medidas e
+  segmentação usam sempre o volume original.
+- As miniaturas dos presets usam uma cópia de até 2 M de voxels e só são
+  feitas depois do carregamento.
+- No exame sintético de 1 GB (Chrome headless, WebGL por software), do
+  clique em carregar até a página responder: de ~60 s para menos de 10 s.
+  Não medido em placa de vídeo real.
+
 ### 3. Privacidade (`src/catstudio/privacy.ts`)
 
 - Na entrada do banco de dados DICOM do VolView, nome, ID e data de
@@ -130,8 +177,11 @@ continuam os do VolView (estado salvo, atalhos e testes não mudam).
 - A reamostragem usa memória extra só para cortes "em trânsito"; um exame
   com tilt e 1000+ cortes de 512×512 continua cabendo, mas o limite real é a
   memória da aba (navegadores de 64 bits costumam aceitar alguns GB).
-- WebGL2 é obrigatório. Em máquinas sem GPU dedicada a renderização
-  cinematográfica em qualidade alta fica lenta.
+- WebGL2 é obrigatório. Em máquinas sem GPU dedicada, use o desempenho
+  Leve; o Máximo com um volume grande pode travar a página.
+- A vista 3D mostra o volume inteiro com o preset escolhido: num tórax com
+  contraste, costelas e esterno ficam na frente do coração. Isolar coração
+  e aorta a partir do contraste ainda não existe.
 - Uso em pesquisa e ensino; não é dispositivo médico.
 
 ## Próximos passos (Etapa 2 — Cinematic Rendering)

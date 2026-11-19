@@ -10,6 +10,7 @@ import VolumeProperties from './VolumeProperties.vue';
 import VolumeRendering from './VolumeRendering.vue';
 import VolumePresets from './VolumePresets.vue';
 import LayerList from './LayerList.vue';
+import PerformanceSelect from '@/src/catstudio/components/PerformanceSelect.vue';
 
 export default defineComponent({
   components: {
@@ -18,6 +19,7 @@ export default defineComponent({
     VolumeProperties,
     LayerList,
     EnFaceControlPanel,
+    PerformanceSelect,
   },
   setup() {
     // Use global current image - this gets the first loaded image when no view is selected
@@ -116,6 +118,7 @@ export default defineComponent({
             Renderização 3D
           </v-expansion-panel-title>
           <v-expansion-panel-text eager class="volume-controls">
+            <performance-select />
             <v-skeleton-loader v-if="isImageLoading" type="image" />
             <volume-rendering v-else :view-id="view3DId" />
 
