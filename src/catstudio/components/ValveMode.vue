@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * CatStudio — modo Valvas: marca-se o anel em três pontos no corte axial e a
- * valva aparece como holograma ou reconstrução 3D; com várias fases, batendo.
+ * CatStudio — modo Valvas: a valva aórtica é localizada sozinha (as outras,
+ * por três pontos do anel no corte axial) e aparece como holograma ou
+ * reconstrução 3D; com várias fases, batendo.
  */
 import {
   computed,
@@ -20,11 +21,14 @@ import {
   planeFromPoints,
   sampleCube,
   type Cube,
+  type Plane,
   type ValveKey,
+  type ValveMesh,
   type Vec3,
   type Volume,
 } from '@/src/catstudio/valve';
 import { createValveRenderer } from '@/src/catstudio/valveRender';
+import { detectAorticValve, orientPlane } from '@/src/catstudio/valveDetect';
 import { pinImage, unpinImage } from '@/src/catstudio/lazy';
 import { untilLoaded } from '@/src/composables/untilLoaded';
 import { useCurrentImage } from '@/src/composables/useCurrentImage';
@@ -49,7 +53,9 @@ const busy = ref('');
 const recording = ref(false);
 
 const cubes = shallowRef<Cube[]>([]);
-const frames = shallowRef<Float32Array[]>([]);
+const frames = shallowRef<ValveMesh[]>([]);
+/** Plano achado pela detecção automática (tem precedência sobre os pontos). */
+const autoPlane = shallowRef<Plane | null>(null);
 const phase = ref(0);
 const view = reactive({ spin: 0.6, tilt: 0.95 });
 
@@ -71,6 +77,9 @@ const volume = computed(() =>
   valveMode.open && currentImageData.value
     ? volumeOf(currentImageID.value)
     : null
+);
+const direction = computed(
+  () => imageCache.getVtkImageData(currentImageID.value)?.getDirection() ?? null
 );
 
 /** Outras fases da mesma série (volumes "id~2", "id~3"...), em ordem. */
@@ -141,6 +150,30 @@ function drawPick() {
     ctx.font = '600 13px sans-serif';
     ctx.fillText(String(n + 1), x + 9, y - 7);
   });
+  const found = autoPlane.value;
+  if (found) {
+    const c = found.center;
+    const x = ((c[0] / vol.spacing[0] - r.x) / r.w) * cv.width;
+    const y = ((c[1] / vol.spacing[1] - r.y) / r.h) * cv.height;
+    const here = Math.abs(c[2] / vol.spacing[2] - slice.value) < 1.5;
+    ctx.strokeStyle = here ? '#ffd24a' : 'rgba(255,210,74,.45)';
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(
+      x,
+      y,
+      (radius.value / vol.spacing[0] / r.w) * cv.width,
+      0,
+      2 * Math.PI
+    );
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.font = '600 13px sans-serif';
+    ctx.fillText('anel', x + 9, y - 7);
+  }
 }
 
 function toSlicePixel(e: MouseEvent, vol: Volume) {
@@ -154,7 +187,7 @@ function toSlicePixel(e: MouseEvent, vol: Volume) {
 
 function onPickClick(e: MouseEvent) {
   const vol = volume.value;
-  if (!vol || points.value.length >= 3) return;
+  if (!vol || points.value.length >= 3 || autoPlane.value) return;
   const { i, j } = toSlicePixel(e, vol);
   points.value = [
     ...points.value,
@@ -178,6 +211,7 @@ function onPickWheel(e: WheelEvent) {
 
 function resetPoints() {
   points.value = [];
+  autoPlane.value = null;
   cubes.value = [];
   frames.value = [];
   message.value = '';
@@ -185,11 +219,65 @@ function resetPoints() {
 
 // ---------------------------------------------------------------- extração
 
-const plane = computed(() =>
-  points.value.length === 3
-    ? planeFromPoints(points.value[0], points.value[1], points.value[2])
-    : null
-);
+const plane = computed(() => {
+  if (autoPlane.value) return autoPlane.value;
+  if (points.value.length < 3) return null;
+  const marked = planeFromPoints(
+    points.value[0],
+    points.value[1],
+    points.value[2]
+  );
+  // a ordem dos cliques não pode decidir de que lado ficam as cúspides
+  return marked && orientPlane(marked, valve.value, direction.value);
+});
+
+const DETECT_FAIL = {
+  'sem-contraste':
+    'Não achei sangue contrastado neste exame. Marque o anel à mão.',
+  'sem-aorta':
+    'Não consegui localizar a aorta ascendente. Marque o anel à mão.',
+  'sem-anel':
+    'Achei a aorta, mas não o anel com segurança. Marque o anel à mão.',
+} as const;
+
+/** Volume em que a detecção já foi tentada (não repete sozinha). */
+let detectedFor: Volume | null = null;
+
+async function detect() {
+  const vol = volume.value;
+  if (!vol || busy.value) return;
+  detectedFor = vol;
+  resetPoints();
+  busy.value = 'Procurando a valva aórtica…';
+  // deixa a mensagem aparecer antes do cálculo (que ocupa a página)
+  await new Promise((resolve) => {
+    setTimeout(resolve, 40);
+  });
+  let result: ReturnType<typeof detectAorticValve>;
+  try {
+    result = detectAorticValve(vol, direction.value);
+  } catch {
+    result = { ok: false, reason: 'sem-anel' };
+  }
+  busy.value = '';
+  if (volume.value !== vol || valve.value !== 'aortica') return;
+  if (!result.ok) {
+    message.value = DETECT_FAIL[result.reason];
+    return;
+  }
+  slice.value = Math.max(
+    0,
+    Math.min(
+      vol.dims[2] - 1,
+      Math.round(result.plane.center[2] / vol.spacing[2])
+    )
+  );
+  autoPlane.value = result.plane;
+}
+
+function detectIfAortic() {
+  if (valve.value === 'aortica' && volume.value !== detectedFor) detect();
+}
 
 function extractAll() {
   const cfg = VALVES[valve.value];
@@ -203,7 +291,7 @@ function extractAll() {
       calcium,
     })
   );
-  const n = frames.value[phase.value]?.length ?? 0;
+  const n = frames.value[phase.value]?.indices.length ?? 0;
   message.value = n
     ? ''
     : 'Não achei superfície com este limiar. Ajuste o limiar ou refaça os pontos.';
@@ -270,8 +358,14 @@ watch([radius, threshold], () => {
   if (cubes.value.length) extractAll();
 });
 watch(valve, (v) => {
+  // outra valva = outro anel: recomeça (a aórtica é procurada sozinha)
   radius.value = VALVES[v].radius;
-  if (cubes.value.length) extractAll();
+  resetPoints();
+  if (v === 'aortica') detect();
+});
+watch(volume, (vol) => {
+  if (vol) detectIfAortic();
+  else detectedFor = null;
 });
 
 // ------------------------------------------------------------------ desenho
@@ -303,7 +397,6 @@ function drawView(now: number) {
     zoom: (SIZE * 0.4) / (radius.value + 6),
     style: style.value,
     flip: flip.value,
-    step: cubes.value[0].step,
   });
   cv.getContext('2d')!.putImageData(new ImageData(rgba, SIZE, SIZE), 0, 0);
 }
@@ -372,14 +465,23 @@ watch(
     const vol = volumeOf(currentImageID.value);
     if (vol) slice.value = Math.floor(vol.dims[2] / 2);
     raf = requestAnimationFrame(drawView);
+    detectedFor = null;
+    if (vol) detectIfAortic();
   }
 );
-watch([volume, slice, points, () => zoom.k, pickCanvas], drawPick, {
-  flush: 'post',
-});
+watch(
+  [volume, slice, points, autoPlane, radius, () => zoom.k, pickCanvas],
+  drawPick,
+  {
+    flush: 'post',
+  }
+);
 onBeforeUnmount(() => cancelAnimationFrame(raf));
 
 const hint = computed(() => {
+  if (busy.value && !frames.value.length) return busy.value;
+  if (autoPlane.value)
+    return 'Valva aórtica localizada automaticamente (círculo no corte). Arraste a valva para girar; se o anel não estiver certo, use "Marcar à mão".';
   const n = points.value.length;
   if (n < 3) return `${VALVES[valve.value].hint} Ponto ${n + 1} de 3.`;
   return 'Arraste a valva para girar.';
@@ -459,7 +561,17 @@ const canLoadPhases = computed(
               class="text-none"
               data-testid="valve-reset"
               @click="resetPoints"
-              >Refazer pontos</v-btn
+              >{{ autoPlane ? 'Marcar à mão' : 'Refazer pontos' }}</v-btn
+            >
+            <v-btn
+              v-if="valve === 'aortica' && !autoPlane"
+              size="small"
+              variant="text"
+              class="text-none"
+              :disabled="!!busy"
+              data-testid="valve-detect"
+              @click="detect"
+              >Localizar sozinho</v-btn
             >
           </div>
           <div class="text-caption text-medium-emphasis mt-1">

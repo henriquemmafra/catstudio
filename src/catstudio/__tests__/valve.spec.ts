@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   KIND,
-  POINT_STRIDE,
   bloodLevel,
   defaultThresholds,
   extractSurface,
   planeFromPoints,
   sampleCube,
   sampleVolume,
+  type ValveMesh,
   type Volume,
 } from '../valve';
 import { createValveRenderer } from '../valveRender';
@@ -41,11 +41,8 @@ function phantom(): Volume {
   return { data, dims: [n, n, n], spacing: [sp, sp, sp] };
 }
 
-const count = (pts: Float32Array, kind: number) => {
-  let c = 0;
-  for (let o = 6; o < pts.length; o += POINT_STRIDE) if (pts[o] === kind) c++;
-  return c;
-};
+const count = (mesh: ValveMesh, kind: number) =>
+  mesh.kinds.reduce((n, k) => n + (k === kind ? 1 : 0), 0);
 
 describe('CatStudio — modo Valvas', () => {
   const vol = phantom();
@@ -76,11 +73,48 @@ describe('CatStudio — modo Valvas', () => {
     expect(count(pts, KIND.leaflet)).toBeGreaterThan(500);
     expect(count(pts, KIND.wall)).toBeGreaterThan(1000);
     expect(count(pts, KIND.calcium)).toBeGreaterThan(20);
-    // o folheto fica no plano do anel (|z| pequeno) e fora do furo central
-    for (let o = 0; o < pts.length; o += POINT_STRIDE) {
-      if (pts[o + 6] !== KIND.leaflet) continue;
-      expect(Math.abs(pts[o + 2])).toBeLessThan(2.5);
+    // o folheto fica no plano do anel (|z| pequeno)
+    for (let v = 0; v < pts.kinds.length; v++) {
+      if (pts.kinds[v] !== KIND.leaflet) continue;
+      expect(Math.abs(pts.positions[3 * v + 2])).toBeLessThan(2.5);
     }
+  });
+
+  it('a malha é subvoxel, com normais unitárias apontando para o sangue', () => {
+    const cube = sampleCube(vol, plane);
+    const mesh = extractSurface(cube, {
+      radius: 16,
+      from: -9,
+      to: -3,
+      ...defaultThresholds(400),
+    });
+    expect(mesh.indices.length % 3).toBe(0);
+    expect(mesh.indices.length).toBeGreaterThan(3000);
+    expect(mesh.kinds.every((k) => k === KIND.wall)).toBe(true);
+    expect(Math.max(...mesh.indices)).toBeLessThan(mesh.kinds.length);
+    // trecho só de tubo (raio 12 mm): os vértices ficam na parede, não nos
+    // centros dos voxels — o raio varia muito menos que o passo de 0,5 mm
+    let worst = 0;
+    let inward = 0;
+    let walls = 0;
+    for (let v = 0; v < mesh.kinds.length; v++) {
+      if (mesh.kinds[v] !== KIND.wall) continue;
+      const [x, y] = [mesh.positions[3 * v], mesh.positions[3 * v + 1]];
+      // o centro do plano está 4 mm fora do eixo do tubo (em y)
+      const r = Math.hypot(x, y + 4);
+      worst = Math.max(worst, Math.abs(r - 12));
+      const n = [
+        mesh.normals[3 * v],
+        mesh.normals[3 * v + 1],
+        mesh.normals[3 * v + 2],
+      ];
+      expect(Math.hypot(n[0], n[1], n[2])).toBeCloseTo(1, 3);
+      if (n[0] * x + n[1] * (y + 4) < 0) inward += 1;
+      walls += 1;
+    }
+    expect(walls).toBeGreaterThan(1000);
+    expect(worst).toBeLessThan(0.45);
+    expect(inward / walls).toBeGreaterThan(0.98);
   });
 
   it('sem contraste em volta não há nível de sangue', () => {
@@ -102,10 +136,10 @@ describe('CatStudio — modo Valvas', () => {
       ...defaultThresholds(400),
     });
     const r = createValveRenderer(120, 120);
-    const base = { spin: 0.5, tilt: 0.9, zoom: 3, flip: false, step: 0.6 };
+    const base = { spin: 0.5, tilt: 0.9, zoom: 3, flip: false };
     const lit = (rgba: Uint8ClampedArray) => {
       let n = 0;
-      for (let i = 0; i < rgba.length; i += 4) if (rgba[i + 1] > 90) n++;
+      for (let i = 0; i < rgba.length; i += 4) if (rgba[i + 1] > 70) n++;
       return n;
     };
     expect(lit(r.draw(pts, { ...base, style: 'holo' }))).toBeGreaterThan(300);

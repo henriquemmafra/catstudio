@@ -3,10 +3,12 @@
  *
  * A partir de três pontos marcados no anel, recorta um cubo pequeno em volta
  * da valva (no sistema do anel: x e y no plano, z ao longo do eixo) e extrai
- * dele a superfície entre o sangue contrastado e o tecido. Cada ponto da
- * superfície é classificado como parede, folheto (estrutura fina, com sangue
- * dos dois lados) ou cálcio. É isso que o holograma e a reconstrução 3D
- * desenham; nada vem de modelo pronto, só dos voxels do exame.
+ * dele a superfície entre o sangue contrastado e o tecido, como malha de
+ * triângulos com posição subvoxel (a superfície passa onde a densidade cruza
+ * o limiar, não no centro do voxel). Cada vértice é classificado como parede,
+ * folheto (estrutura fina, com sangue dos dois lados) ou cálcio. É isso que
+ * o holograma e a reconstrução 3D desenham; nada vem de modelo pronto, só
+ * dos voxels do exame.
  *
  * Coordenadas "mm" aqui são índice × espaçamento do volume (a orientação do
  * paciente não importa para a extração).
@@ -71,7 +73,6 @@ export interface Cube {
   step: number;
 }
 
-export const POINT_STRIDE = 7;
 export const KIND = { wall: 0, leaflet: 1, calcium: 2 } as const;
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -127,9 +128,9 @@ export function sampleVolume(vol: Volume, p: Vec3): number {
 
 export const CUBE_HALF = 38;
 export const CUBE_HALF_DEPTH = 32;
-export const CUBE_STEP = 0.6;
+export const CUBE_STEP = 0.5;
 
-/** Reamostra o cubo em volta do anel (76 × 76 × 64 mm, voxel de 0,6 mm). */
+/** Reamostra o cubo em volta do anel (76 × 76 × 64 mm, voxel de 0,5 mm). */
 export function sampleCube(vol: Volume, plane: Plane): Cube {
   const step = CUBE_STEP;
   const size = Math.round((2 * CUBE_HALF) / step);
@@ -196,85 +197,251 @@ export function defaultThresholds(blood: number) {
   };
 }
 
-const NEIGHBORS: Vec3[] = [
-  [1, 0, 0],
-  [-1, 0, 0],
-  [0, 1, 0],
-  [0, -1, 0],
-  [0, 0, 1],
-  [0, 0, -1],
-];
-
-interface Ctx {
-  cube: Cube;
-  opt: ExtractOptions;
-  at: (i: number, j: number, k: number) => number;
-}
-
-function gradient(ctx: Ctx, i: number, j: number, k: number): Vec3 {
-  const { at } = ctx;
-  return norm([
-    at(i + 1, j, k) - at(i - 1, j, k),
-    at(i, j + 1, k) - at(i, j - 1, k),
-    at(i, j, k + 1) - at(i, j, k - 1),
-  ]);
-}
-
-/** Folheto = tecido fino: andando para longe do sangue, o sangue volta em < 3,6 mm. */
-function isThin(ctx: Ctx, p: Vec3, g: Vec3): boolean {
-  const steps = Math.round(3.6 / ctx.cube.step);
-  for (let s = 2; s <= steps; s++) {
-    const h = ctx.at(
-      Math.round(p[0] - g[0] * s),
-      Math.round(p[1] - g[1] * s),
-      Math.round(p[2] - g[2] * s)
-    );
-    if (h >= ctx.opt.threshold) return true;
-  }
-  return false;
-}
-
-/** -1 = não é superfície; senão, o tipo do ponto. */
-function classify(ctx: Ctx, i: number, j: number, k: number): number {
-  const h = ctx.at(i, j, k);
-  const { threshold, calcium } = ctx.opt;
-  const near = (test: (x: number) => boolean) =>
-    NEIGHBORS.some((d) => test(ctx.at(i + d[0], j + d[1], k + d[2])));
-  if (h >= calcium) return near((x) => x < calcium) ? KIND.calcium : -1;
-  if (h >= threshold || h < -200) return -1;
-  if (!near((x) => x >= threshold)) return -1;
-  return isThin(ctx, [i, j, k], gradient(ctx, i, j, k))
-    ? KIND.leaflet
-    : KIND.wall;
+export interface ValveMesh {
+  /** x, y, z em mm no sistema do anel (z = eixo da valva). */
+  positions: Float32Array;
+  /** Normal unitária, apontando para o sangue. */
+  normals: Float32Array;
+  kinds: Uint8Array;
+  /** Três índices por triângulo. */
+  indices: Uint32Array;
 }
 
 /**
- * Pontos da superfície dentro do cilindro: [x, y, z, nx, ny, nz, tipo] em mm
- * no sistema do anel (z = eixo da valva).
+ * Campo usado para a superfície: a própria densidade, mas com o cálcio
+ * "dobrado" para baixo do limiar — senão ele se confundiria com o sangue
+ * (os dois são mais densos que o tecido) e sumiria da superfície.
  */
-export function extractSurface(cube: Cube, opt: ExtractOptions): Float32Array {
-  const { data, size, depth, step } = cube;
-  const at = (i: number, j: number, k: number) => {
-    const out = i < 0 || j < 0 || k < 0 || i >= size || j >= size;
-    return out || k >= depth ? -1000 : data[i + size * (j + size * k)];
-  };
-  const ctx: Ctx = { cube, opt, at };
-  const out: number[] = [];
+function foldedField(cube: Cube, calcium: number): Float32Array {
+  const out = new Float32Array(cube.data.length);
+  for (let i = 0; i < out.length; i++) {
+    const h = cube.data[i];
+    out[i] = h <= calcium ? h : calcium - (h - calcium) * 8;
+  }
+  return out;
+}
+
+/** Suavização binomial (1-2-1) nos três eixos: só para as normais. */
+function blurred(field: Float32Array, size: number, depth: number) {
+  const strides = [1, size, size * size];
+  const lengths = [size, size, depth];
+  let src = field;
+  for (let axis = 0; axis < 3; axis++) {
+    const dst = new Float32Array(src.length);
+    const st = strides[axis];
+    const len = lengths[axis];
+    for (let o = 0; o < src.length; o++) {
+      const pos = Math.floor(o / st) % len;
+      const lo = pos > 0 ? src[o - st] : src[o];
+      const hi = pos < len - 1 ? src[o + st] : src[o];
+      dst[o] = 0.25 * lo + 0.5 * src[o] + 0.25 * hi;
+    }
+    src = dst;
+  }
+  return src;
+}
+
+/** Amostra trilinear de um campo do cubo, em coordenadas de voxel. */
+function sampleField(
+  field: Float32Array,
+  size: number,
+  depth: number,
+  x: number,
+  y: number,
+  z: number
+): number {
+  const cx = Math.max(0, Math.min(size - 1.001, x));
+  const cy = Math.max(0, Math.min(size - 1.001, y));
+  const cz = Math.max(0, Math.min(depth - 1.001, z));
+  const i = Math.floor(cx);
+  const j = Math.floor(cy);
+  const k = Math.floor(cz);
+  const fx = cx - i;
+  const fy = cy - j;
+  const fz = cz - k;
+  const o = i + size * (j + size * k);
+  const row = (q: number) => field[q] + (field[q + 1] - field[q]) * fx;
+  const face = (q: number) => row(q) + (row(q + size) - row(q)) * fy;
+  const lo = face(o);
+  return lo + (face(o + size * size) - lo) * fz;
+}
+
+// cantos de uma célula e as 12 arestas entre eles
+const CORNERS: Vec3[] = [
+  [0, 0, 0],
+  [1, 0, 0],
+  [0, 1, 0],
+  [1, 1, 0],
+  [0, 0, 1],
+  [1, 0, 1],
+  [0, 1, 1],
+  [1, 1, 1],
+];
+const EDGES: Array<[number, number]> = [
+  [0, 1],
+  [2, 3],
+  [4, 5],
+  [6, 7],
+  [0, 2],
+  [1, 3],
+  [4, 6],
+  [5, 7],
+  [0, 4],
+  [1, 5],
+  [2, 6],
+  [3, 7],
+];
+
+/**
+ * Superfície sangue × tecido dentro do cilindro, por "surface nets": um
+ * vértice por célula cortada pela superfície, na média dos pontos em que as
+ * arestas cruzam o limiar, e um quadrilátero por aresta cortada.
+ */
+export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
+  const { size, depth, step } = cube;
+  const field = foldedField(cube, opt.calcium);
+  const smooth = blurred(field, size, depth);
+  const T = opt.threshold;
   const half = (size * step) / 2;
   const halfDepth = (depth * step) / 2;
   const k0 = Math.max(1, Math.floor((opt.from + halfDepth) / step));
-  const k1 = Math.min(depth - 1, Math.ceil((opt.to + halfDepth) / step));
-  const visit = (i: number, j: number, k: number) => {
-    const x = (i + 0.5) * step - half;
-    const y = (j + 0.5) * step - half;
-    if (x * x + y * y > opt.radius * opt.radius) return;
-    const kind = classify(ctx, i, j, k);
-    if (kind < 0) return;
-    const g = gradient(ctx, i, j, k);
-    out.push(x, y, (k + 0.5) * step - halfDepth, g[0], g[1], g[2], kind);
+  const k1 = Math.min(depth - 2, Math.ceil((opt.to + halfDepth) / step));
+  const sxy = size * size;
+  const vertexOf = new Int32Array(size * size * depth).fill(-1);
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const kind: number[] = [];
+  const value = new Float32Array(8);
+  const thinSteps = Math.round(3.6 / step);
+  const reach = Math.round(1 / step);
+
+  for (let k = k0; k < k1; k++)
+    for (let j = 1; j < size - 2; j++)
+      for (let i = 1; i < size - 2; i++) {
+        const o = i + size * (j + size * k);
+        let bits = 0;
+        let top = -Infinity;
+        for (let c = 0; c < 8; c++) {
+          const q =
+            o + CORNERS[c][0] + size * CORNERS[c][1] + sxy * CORNERS[c][2];
+          value[c] = field[q];
+          if (value[c] >= T) bits |= 1 << c;
+          if (cube.data[q] > top) top = cube.data[q];
+        }
+        if (bits === 0 || bits === 255) continue;
+        const x = (i + 1) * step - half;
+        const y = (j + 1) * step - half;
+        if (x * x + y * y > opt.radius * opt.radius) continue;
+        let px = 0;
+        let py = 0;
+        let pz = 0;
+        let n = 0;
+        for (const [a, b] of EDGES) {
+          if (((bits >> a) & 1) === ((bits >> b) & 1)) continue;
+          const t = (T - value[a]) / (value[b] - value[a]);
+          px += CORNERS[a][0] + (CORNERS[b][0] - CORNERS[a][0]) * t;
+          py += CORNERS[a][1] + (CORNERS[b][1] - CORNERS[a][1]) * t;
+          pz += CORNERS[a][2] + (CORNERS[b][2] - CORNERS[a][2]) * t;
+          n += 1;
+        }
+        const vx = i + px / n;
+        const vy = j + py / n;
+        const vz = k + pz / n;
+        // normal = gradiente do campo suavizado (aponta para o sangue)
+        const at = (dx: number, dy: number, dz: number) =>
+          sampleField(smooth, size, depth, vx + dx, vy + dy, vz + dz);
+        const g = norm([
+          at(1, 0, 0) - at(-1, 0, 0),
+          at(0, 1, 0) - at(0, -1, 0),
+          at(0, 0, 1) - at(0, 0, -1),
+        ]);
+        // folheto = tecido fino: indo para longe do sangue, ele volta em < 3,6 mm
+        // cálcio: algum voxel calcificado a até 1 mm (a borda do cálcio, por
+        // volume parcial, tem densidade de sangue e não pode virar "folheto")
+        let dense = top;
+        for (let dk = -reach; dk <= reach + 1 && dense < opt.calcium; dk++)
+          for (let dj = -reach; dj <= reach + 1 && dense < opt.calcium; dj++)
+            for (let di = -reach; di <= reach + 1; di++) {
+              const q = o + di + size * dj + sxy * dk;
+              if (q >= 0 && q < cube.data.length && cube.data[q] > dense)
+                dense = cube.data[q];
+            }
+        let type: number = dense >= opt.calcium ? KIND.calcium : KIND.wall;
+        if (type === KIND.wall)
+          for (let sIdx = 2; sIdx <= thinSteps; sIdx++) {
+            const h = sampleField(
+              field,
+              size,
+              depth,
+              vx - g[0] * sIdx,
+              vy - g[1] * sIdx,
+              vz - g[2] * sIdx
+            );
+            if (h >= T) {
+              type = KIND.leaflet;
+              break;
+            }
+          }
+        vertexOf[o] = kind.length;
+        pos.push(
+          (vx + 0.5) * step - half,
+          (vy + 0.5) * step - half,
+          (vz + 0.5) * step - halfDepth
+        );
+        nor.push(g[0], g[1], g[2]);
+        kind.push(type);
+      }
+
+  // um quadrilátero (dois triângulos) por aresta cortada, ligando as quatro
+  // células que a compartilham
+  const idx: number[] = [];
+  const quad = (a: number, b: number, c: number, d: number) => {
+    if (a < 0 || b < 0 || c < 0 || d < 0) return;
+    idx.push(a, b, c, a, c, d);
   };
   for (let k = k0; k < k1; k++)
-    for (let j = 1; j < size - 1; j++)
-      for (let i = 1; i < size - 1; i++) visit(i, j, k);
-  return Float32Array.from(out);
+    for (let j = 1; j < size - 2; j++)
+      for (let i = 1; i < size - 2; i++) {
+        const o = i + size * (j + size * k);
+        const here = field[o] >= T;
+        if (here !== field[o + 1] >= T)
+          quad(
+            vertexOf[o],
+            vertexOf[o - size],
+            vertexOf[o - size - sxy],
+            vertexOf[o - sxy]
+          );
+        if (here !== field[o + size] >= T)
+          quad(
+            vertexOf[o],
+            vertexOf[o - 1],
+            vertexOf[o - 1 - sxy],
+            vertexOf[o - sxy]
+          );
+        if (here !== field[o + sxy] >= T)
+          quad(
+            vertexOf[o],
+            vertexOf[o - 1],
+            vertexOf[o - 1 - size],
+            vertexOf[o - size]
+          );
+      }
+
+  // parede × folheto por maioria entre vizinhos (tira o salpicado do ruído)
+  const kinds = Uint8Array.from(kind);
+  const votes = new Int16Array(kinds.length);
+  for (let t = 0; t < idx.length; t += 3)
+    for (let a = 0; a < 3; a++)
+      for (let b = 0; b < 3; b++)
+        votes[idx[t + a]] += kinds[idx[t + b]] === KIND.leaflet ? 1 : -1;
+  for (let v = 0; v < kinds.length; v++)
+    if (kinds[v] !== KIND.calcium)
+      kinds[v] = votes[v] > 0 ? KIND.leaflet : KIND.wall;
+
+  return {
+    positions: Float32Array.from(pos),
+    normals: Float32Array.from(nor),
+    kinds,
+    indices: Uint32Array.from(idx),
+  };
 }
