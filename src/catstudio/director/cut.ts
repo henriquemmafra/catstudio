@@ -13,8 +13,14 @@ import {
 import {
   scene3D,
   styleForWindow,
+  viewDirection,
   type Scene3D,
 } from '@/src/catstudio/director/render3d';
+import {
+  findLungMask,
+  lungWeight,
+  type LungMask,
+} from '@/src/catstudio/director/landmarks';
 import {
   sample,
   type Vec3,
@@ -33,6 +39,8 @@ export interface Frame {
   height: number;
   /** letras de orientação: esquerda, direita, alto e baixo da imagem */
   labels: { left: string; right: string; top: string; bottom: string };
+  /** reconstrução 3D do órgão inteiro: até onde os raios vão, em mm */
+  depth?: number;
 }
 
 const MARGIN = 12;
@@ -179,6 +187,31 @@ const hexToRgb = (hex: string): [number, number, number] => [
   parseInt(hex.slice(5, 7), 16),
 ];
 
+const lungMasks = new WeakMap<WorldVolume, LungMask>();
+
+/** Região dos pulmões do volume (calculada uma vez por volume). */
+function lungMaskOf(vol: WorldVolume): LungMask {
+  const known = lungMasks.get(vol);
+  if (known) return known;
+  const mask = findLungMask(vol);
+  lungMasks.set(vol, mask);
+  return mask;
+}
+
+/**
+ * Pulmões isolados: em vez de recortar no plano, olha o órgão inteiro de
+ * fora. O plano vai para a borda do corpo do lado do observador e a
+ * profundidade atravessa o corpo todo.
+ */
+function wholeBodyFrame(frame: Frame, lm: Landmarks, recipe: Recipe) {
+  const axis = NORMAL_AXIS[recipe.plano];
+  const look = viewDirection(frame)[axis];
+  const near = look > 0 ? lm.body[0][axis] - MARGIN : lm.body[1][axis] + MARGIN;
+  const origin = [...frame.origin] as Vec3;
+  origin[axis] = near;
+  return { origin, depth: lm.body[1][axis] - lm.body[0][axis] + 2 * MARGIN };
+}
+
 export function newJob(
   vol: WorldVolume,
   recipe: Recipe,
@@ -187,16 +220,25 @@ export function newJob(
 ): CutJob {
   const frame = frameOf(recipe, lm);
   const size = imageSize(frame, vol, maxSide);
+  // a reconstrução 3D só usa a imagem colorida: os valores ficam vazios
   const image: CutImage = {
     ...size,
-    values: new Float32Array(size.width * size.height),
+    values: new Float32Array(
+      recipe.projecao === '3d' ? 0 : size.width * size.height
+    ),
   };
   const job: CutJob = { frame, image, project: projector(vol, frame, recipe) };
   if (recipe.projecao === '3d') {
+    const whole = recipe.isolar === 'pulmoes';
+    const lungs = whole ? lungMaskOf(vol) : null;
+    if (whole) Object.assign(frame, wholeBodyFrame(frame, lm, recipe));
     const scene = scene3D(vol, frame, size, {
-      style: styleForWindow(recipe.janela),
-      depth: recipe.espessura,
+      style: whole ? 'pulmao' : styleForWindow(recipe.janela),
+      depth: whole ? frame.depth! : recipe.espessura,
       background: hexToRgb(recipe.fundo),
+      weight: lungs
+        ? (x: number, y: number, z: number) => lungWeight(lungs, x, y, z)
+        : undefined,
     });
     image.rgba = scene.rgba;
     job.paint = scene.paint;

@@ -44,6 +44,14 @@ export const REFERENCES_OF: Record<PlaneName, readonly Reference[]> = {
 export const PROJECTIONS = ['fina', 'mip', 'minip', 'media', '3d'] as const;
 export type Projection = (typeof PROJECTIONS)[number];
 
+/** Eixos dos cortes: os do paciente (endireitado) ou os do tomógrafo. */
+export const ALIGNMENTS = ['paciente', 'aparelho'] as const;
+export type Alignment = (typeof ALIGNMENTS)[number];
+
+/** O que a reconstrução 3D mostra sozinho (o resto fica transparente). */
+export const ISOLATIONS = ['nada', 'pulmoes'] as const;
+export type Isolation = (typeof ISOLATIONS)[number];
+
 export const FIELDS = ['tudo', 'torax', 'abdome'] as const;
 export type Field = (typeof FIELDS)[number];
 
@@ -91,6 +99,8 @@ export interface Recipe {
   /** Cor em volta da imagem, #rrggbb. */
   fundo: string;
   titulo: string;
+  alinhamento: Alignment;
+  isolar: Isolation;
 }
 
 export const THICKNESS_LIMITS = [1, 300] as const;
@@ -110,6 +120,8 @@ export const defaultRecipe = (): Recipe => ({
   campo: 'tudo',
   fundo: '#000000',
   titulo: '',
+  alinhamento: 'paciente',
+  isolar: 'nada',
 });
 
 const oneOf = <T extends string>(
@@ -152,6 +164,8 @@ export function sanitizeRecipe(raw: unknown, base = defaultRecipe()): Recipe {
         ? r.fundo.toLowerCase()
         : base.fundo,
     titulo: typeof r.titulo === 'string' ? r.titulo.slice(0, 120) : base.titulo,
+    alinhamento: oneOf(r.alinhamento, ALIGNMENTS, base.alinhamento),
+    isolar: oneOf(r.isolar, ISOLATIONS, base.isolar),
   };
 }
 
@@ -230,6 +244,8 @@ const STYLE_BY_WINDOW: Partial<Record<WindowName, string>> = {
 
 /** Projeção e janela (ou, no 3D, profundidade e estilo de cor), em palavras. */
 function lookParts(recipe: Recipe): string[] {
+  if (recipe.projecao === '3d' && recipe.isolar === 'pulmoes')
+    return ['reconstrução 3D só dos pulmões, inteiros, vistos de fora'];
   if (recipe.projecao === '3d')
     return [
       `reconstrução 3D recortada no plano, ${mm(recipe.espessura)} de profundidade`,
@@ -260,5 +276,6 @@ export function describeRecipe(recipe: Recipe, lm?: Landmarks): string {
   parts.push(...lookParts(recipe));
   if (recipe.campo !== 'tudo')
     parts.push(recipe.campo === 'torax' ? 'só o tórax' : 'só o abdome');
+  if (recipe.alinhamento === 'aparelho') parts.push('eixos do aparelho');
   return parts.join(' · ');
 }

@@ -1255,3 +1255,47 @@ def test_foto_final_no_processador(session, tmp_path):
     lado = lambda im: int((im[60:-60, meio + 40:] > 40).sum())
     assert lado(reduzida) > 200 and lado(sem_esfera) < 0.1 * lado(reduzida)
     assert not session.errors, session.errors
+
+
+def test_diretor_anda_pelos_cortes_sem_esperar_e_isola_pulmoes(session):
+    """Depois do primeiro corte em 3D, os vizinhos ficam prontos sozinhos:
+    a roda do mouse e o controle de posição mostram o próximo na hora. E
+    "só o pulmão em 3D" mostra só os pulmões."""
+    page = _director(session)
+    entendi = _ask_director(page, "coronal no centro em 3d")
+    assert "Corte coronal no centro" in entendi
+    # os vizinhos vão ficando prontos em segundo plano
+    page.wait_for_function(
+        """() => { const m = document.querySelector('[data-testid=director-strip]').textContent.match(/(\\d+) de (\\d+)/);
+                   return m && +m[1] >= 4; }""", timeout=120000)
+    antes = page.evaluate("() => document.querySelector('[data-testid=director-cut]').toDataURL()")
+    corte = page.get_by_test_id("director-cut")
+    corte.hover()
+    inicio = page.evaluate("() => performance.now()")
+    page.mouse.wheel(0, 120)
+    page.wait_for_timeout(50)
+    # já pronto: nada de "Desenhando", e a imagem mudou
+    assert page.get_by_test_id("director-busy").inner_text().strip() == ""
+    depois = page.evaluate("() => document.querySelector('[data-testid=director-cut]').toDataURL()")
+    assert depois != antes
+    assert page.evaluate("() => performance.now()") - inicio < 1500
+    assert "5 mm para trás" in page.get_by_test_id("director-understood").inner_text()
+    # andar não entra no desfazer: desfazer volta ao pedido anterior (nenhum)
+    page.keyboard.press("ArrowLeft")
+    page.wait_for_timeout(100)
+    assert "para trás" not in page.get_by_test_id("director-understood").inner_text()
+
+    entendi = _ask_director(page, "só o pulmão em 3d")
+    assert "só dos pulmões" in entendi, entendi
+    cores = page.evaluate("""() => { const c = document.querySelector('[data-testid=director-cut]');
+        const d = c.getContext('2d').getImageData(40, 40, c.width - 80, c.height - 120).data;
+        let lit = 0, center = 0, n = 0;
+        const w = c.width - 80, h = c.height - 120;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          const i = 4 * (x + w * y); const on = d[i] + d[i+1] + d[i+2] > 60;
+          if (on) lit++;
+          if (Math.abs(x - w / 2) < w * 0.04 && Math.abs(y - h / 2) < h * 0.1) { n++; if (on) center++; } }
+        return { lit: lit / (w * h), center: center / n }; }""")
+    # aparecem os pulmões, mas o mediastino (no meio) fica vazio
+    assert cores["lit"] > 0.05 and cores["center"] < 0.3, cores
+    assert not session.errors, session.errors

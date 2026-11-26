@@ -344,6 +344,33 @@ function applyLook(draft: Draft) {
   if (window || field || background) draft.understood = true;
 }
 
+const TO_PATIENT =
+  /ajustad|alinhad|endireit|corrigid|corrigir|anatomic|retificad|do paciente|ao paciente|\breto\b/;
+const TO_SCANNER =
+  /do aparelho|do tomografo|da maquina|sem ajust|nao ajust|sem corrig|sem alinh|original/;
+const ONLY_LUNGS =
+  /(?:\bso|apenas|somente|isol\w*)\s+(?:o\s+|os\s+)?pulm|pulmo(?:es|ao) isolad|arvore (?:bronquica|vascular)/;
+const SHOW_ALL =
+  /corpo (todo|inteiro)|mostra(r)? tudo|tira(r)? (o )?isolamento|sem isolar/;
+
+/** Eixos do paciente ou do aparelho; pulmões isolados no 3D. */
+function applyExtras(draft: Draft) {
+  const { t, recipe } = draft;
+  if (TO_SCANNER.test(t)) recipe.alinhamento = 'aparelho';
+  else if (TO_PATIENT.test(t)) recipe.alinhamento = 'paciente';
+  if (ONLY_LUNGS.test(t)) {
+    recipe.isolar = 'pulmoes';
+    if (recipe.projecao !== '3d') {
+      recipe.espessura = DEFAULT_DEPTH;
+      recipe.projecao = '3d';
+    }
+    recipe.janela = 'pulmao';
+  } else if (SHOW_ALL.test(t) || recipe.projecao !== '3d')
+    recipe.isolar = 'nada';
+  if (TO_SCANNER.test(t) || TO_PATIENT.test(t) || ONLY_LUNGS.test(t))
+    draft.understood = true;
+}
+
 /**
  * Transforma o pedido em receita. Com uma receita em uso e sem um plano novo
  * no texto, o pedido é um ajuste dela ("2 cm mais lateral", "MIP de 20 mm").
@@ -367,6 +394,7 @@ export function interpret(
           ...defaultRecipe(),
           plano,
           fundo: current?.fundo ?? defaultRecipe().fundo,
+          alinhamento: current?.alinhamento ?? defaultRecipe().alinhamento,
         }
       : { ...current },
     understood: stated,
@@ -377,6 +405,7 @@ export function interpret(
   applyShift(draft, lateralSign);
   applyProjection(draft);
   applyLook(draft);
+  applyExtras(draft);
 
   if (!draft.understood)
     draft.notes.push(

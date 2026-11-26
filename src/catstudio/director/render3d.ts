@@ -19,7 +19,7 @@ import {
 /** Ponto da função de transferência: densidade (UH) → cor e opacidade por mm. */
 type Stop = [hu: number, r: number, g: number, b: number, alpha: number];
 
-export const TISSUE_STYLES = ['tecidos', 'osso', 'vasos'] as const;
+export const TISSUE_STYLES = ['tecidos', 'osso', 'vasos', 'pulmao'] as const;
 export type TissueStyle = (typeof TISSUE_STYLES)[number];
 
 const STOPS: Record<TissueStyle, Stop[]> = {
@@ -49,6 +49,15 @@ const STOPS: Record<TissueStyle, Stop[]> = {
     [220, 0.95, 0.36, 0.3, 0.4],
     [450, 0.98, 0.8, 0.7, 0.55],
     [900, 0.98, 0.95, 0.88, 0.7],
+  ],
+  // só os pulmões: parênquima quase transparente, vasos e pleura em relevo
+  pulmao: [
+    [-960, 0.95, 0.75, 0.75, 0],
+    [-880, 0.96, 0.78, 0.78, 0.004],
+    [-700, 0.95, 0.7, 0.7, 0.012],
+    [-450, 0.9, 0.42, 0.42, 0.12],
+    [-150, 0.85, 0.28, 0.3, 0.45],
+    [100, 0.8, 0.22, 0.25, 0.7],
   ],
 };
 
@@ -98,10 +107,18 @@ export interface Scene3DOptions {
   depth: number;
   /** cor de fundo, 0–255 */
   background: readonly [number, number, number];
+  /** quanto de cada ponto aparece, 0–1 (pulmões isolados) */
+  weight?: (x: number, y: number, z: number) => number;
 }
 
 /** Abaixo deste gradiente (UH/mm) o tecido é homogêneo: sem relevo. */
 const FLAT_GRADIENT = 12;
+
+/** Desvio (0–1) fixo por pixel, sem padrão visível. */
+function jitter(index: number) {
+  const h = Math.sin(index * 12.9898) * 43758.5453;
+  return h - Math.floor(h);
+}
 
 export function scene3D(
   vol: WorldVolume,
@@ -121,7 +138,7 @@ export function scene3D(
   const [lx, ly, lz] = raw.map((c) => c / norm);
   const faceLight = -(dx * lx + dy * ly + dz * lz);
   const tf = new Float32Array(4);
-  const { style, background } = options;
+  const { style, background, weight } = options;
 
   /** Iluminação (0–1) no ponto: face do corte chapada, relevo pelo gradiente. */
   function lightAt(x: number, y: number, z: number, hu: number) {
@@ -139,24 +156,29 @@ export function scene3D(
     let g = 0;
     let b = 0;
     let alpha = 0;
+    // início do raio desviado por pixel: tira os anéis do passo fixo
+    const shift = jitter(index);
     for (let i = 0; i < steps && alpha < 0.985; i++) {
-      const t = (i + 0.5) * step;
+      const t = (i + shift) * step;
       const x = x0 + dx * t;
       const y = y0 + dy * t;
       const z = z0 + dz * t;
+      const share = weight ? weight(x, y, z) : 1;
+      if (share < 0.02) continue;
       const hu = sample(vol, x, y, z);
       transfer(style, hu, tf);
+      tf[3] *= share;
       if (tf[3] > 0.0005) {
         const opacity = 1 - Math.exp(-tf[3] * step);
         // a face do corte (primeira amostra) é chapada; o resto tem relevo
         const lit = i === 0 ? faceLight : lightAt(x, y, z, hu);
         const light = 0.32 + 0.68 * lit;
         // o que está mais fundo escurece um pouco: dá a noção de distância
-        const weight =
+        const part =
           (1 - alpha) * opacity * light * (1 - 0.5 * (t / options.depth));
-        r += weight * tf[0];
-        g += weight * tf[1];
-        b += weight * tf[2];
+        r += part * tf[0];
+        g += part * tf[1];
+        b += part * tf[2];
         alpha += (1 - alpha) * opacity;
       }
     }

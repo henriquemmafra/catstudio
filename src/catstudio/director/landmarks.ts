@@ -9,6 +9,7 @@
  * anatômica média; não são a clavícula medida. Por isso todo corte mostra o
  * localizador com a linha desenhada, para conferir e corrigir.
  */
+import { dilate, erode } from '@/src/catstudio/sculpt/body';
 import {
   bounds,
   sampleNearest,
@@ -224,6 +225,83 @@ function extent(grid: Grid, keep: (o: number) => boolean, tail = 0.01) {
 }
 
 /**
+ * Quais voxels da grade são pulmão: os dois pulmões costumam ser os dois
+ * maiores bolsões de ar interno (ou um só, quando a traqueia os une nesta
+ * resolução); gás intestinal é bem menor.
+ */
+function lungPredicate(grid: Grid, outside: Uint8Array, bodyCount: number) {
+  const { labels, sizes } = components(
+    grid,
+    (o) => !outside[o] && grid.hu[o] < AIR - 100
+  );
+  const largest = Math.max(0, ...sizes);
+  const lung = sizes.map(
+    (size) => size > 0 && size >= 0.25 * largest && size >= 0.005 * bodyCount
+  );
+  return (o: number) => lung[labels[o]];
+}
+
+export interface LungMask {
+  n: Vec3;
+  min: Vec3;
+  step: number;
+  /** 1 = pulmão (com os vasos de dentro e a pleura) */
+  mask: Uint8Array;
+}
+
+/**
+ * Região dos pulmões, para a reconstrução 3D mostrar só eles. Os vasos e
+ * brônquios de dentro do pulmão são buracos no ar: um fechamento (engorda e
+ * emagrece duas camadas) os devolve. A parede do tórax fica de fora.
+ */
+export function findLungMask(vol: WorldVolume, step = coarseStepFor(vol)) {
+  const grid = coarseGrid(vol, step);
+  const outside = outsideAir(grid);
+  const tissue = components(grid, (o) => !outside[o] && grid.hu[o] > -300);
+  const patient = largestLabel(tissue.sizes);
+  const bodyCount = patient ? tissue.sizes[patient] : 0;
+  const isLung = lungPredicate(grid, outside, bodyCount);
+  let mask: Uint8Array = new Uint8Array(grid.hu.length);
+  for (let o = 0; o < mask.length; o++) mask[o] = isLung(o) ? 1 : 0;
+  mask = dilate(dilate(mask, grid.n), grid.n);
+  mask = erode(erode(mask, grid.n), grid.n);
+  return { n: grid.n, min: grid.min, step, mask } as LungMask;
+}
+
+const maskAt = (lungs: LungMask, i: number, j: number, k: number) => {
+  const [nx, ny, nz] = lungs.n;
+  if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return 0;
+  return lungs.mask[i + nx * (j + ny * k)];
+};
+
+/**
+ * Quanto o ponto (mm) está dentro da região dos pulmões, de 0 a 1,
+ * interpolado entre as células da grade: a borda sai lisa, não em degraus.
+ */
+export function lungWeight(lungs: LungMask, x: number, y: number, z: number) {
+  const fx = (x - lungs.min[0]) / lungs.step;
+  const fy = (y - lungs.min[1]) / lungs.step;
+  const fz = (z - lungs.min[2]) / lungs.step;
+  const i = Math.floor(fx);
+  const j = Math.floor(fy);
+  const k = Math.floor(fz);
+  const [a, b, c] = [fx - i, fy - j, fz - k];
+  let sum = 0;
+  for (let n = 0; n < 8; n++) {
+    const di = n & 1;
+    const dj = (n >> 1) & 1;
+    const dk = (n >> 2) & 1;
+    const w = (di ? a : 1 - a) * (dj ? b : 1 - b) * (dk ? c : 1 - c);
+    sum += w * maskAt(lungs, i + di, j + dj, k + dk);
+  }
+  return sum;
+}
+
+/** O ponto (mm) cai dentro da região dos pulmões? */
+export const inLungs = (lungs: LungMask, x: number, y: number, z: number) =>
+  lungWeight(lungs, x, y, z) >= 0.5;
+
+/**
  * Fração mínima do corpo ocupada por ar interno para ser tratada como pulmão.
  * É proporção, não litros: vale do lactente ao adulto (num tórax, os pulmões
  * passam de 10% do volume; gás intestinal num abdome fica bem abaixo de 3%).
@@ -249,18 +327,8 @@ export function findLandmarks(
     [bodyStat.x[1], bodyStat.y[1], bodyStat.z[1]],
   ];
 
-  const { labels, sizes } = components(
-    grid,
-    (o) => !outside[o] && grid.hu[o] < AIR - 100
-  );
-  const largest = Math.max(0, ...sizes);
-  // os dois pulmões costumam ser os dois maiores bolsões de ar (ou um só,
-  // quando a traqueia os une nesta resolução); gás intestinal é bem menor
-  const lung = sizes.map(
-    (size) =>
-      size > 0 && size >= 0.25 * largest && size >= 0.005 * bodyStat.count
-  );
-  const lungStat = extent(grid, (o) => lung[labels[o]], 0.002);
+  const isLung = lungPredicate(grid, outside, bodyStat.count);
+  const lungStat = extent(grid, isLung, 0.002);
 
   if (lungStat.count < MIN_LUNG_FRACTION * bodyStat.count) {
     notes.push(

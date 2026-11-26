@@ -4,7 +4,8 @@
  * hemiclavicular esquerda, partes moles") e recebe o corte pronto, desenhado
  * uma vez. Ajustes também por texto, ou clicando no localizador.
  */
-import { computed, nextTick, ref, shallowRef, watch } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
+import { useEventListener } from '@vueuse/core';
 import { useCurrentImage } from '@/src/composables/useCurrentImage';
 import { useImageCacheStore } from '@/src/store/image-cache';
 import { download } from '@/src/catstudio/capture';
@@ -24,12 +25,21 @@ import { drawCut, drawLocator } from '@/src/catstudio/director/compose';
 import {
   lineOnLocator,
   locatorRecipe,
-  newJob,
   positionFromPixel,
   renderCut,
-  renderRows,
   type CutJob,
 } from '@/src/catstudio/director/cut';
+import {
+  alignedVolume,
+  estimateRoll,
+  rollNotes,
+} from '@/src/catstudio/director/alignment';
+import {
+  shiftLimits,
+  useStrip,
+  type Space,
+} from '@/src/catstudio/director/useStrip';
+import { useStripNavigation } from '@/src/catstudio/director/useStripNavigation';
 import { interpret, lateralSignOf } from '@/src/catstudio/director/interpret';
 import {
   findLandmarks,
@@ -43,11 +53,7 @@ import {
   isEstimated,
   type Recipe,
 } from '@/src/catstudio/director/recipe';
-import {
-  volumeFromImage,
-  type Vec3,
-  type WorldVolume,
-} from '@/src/catstudio/director/volume';
+import { volumeFromImage, type Vec3 } from '@/src/catstudio/director/volume';
 
 const EXAMPLES = [
   'Sagital na linha hemiclavicular esquerda, partes moles',
@@ -55,10 +61,6 @@ const EXAMPLES = [
   'Axial no ápice pulmonar, janela de pulmão',
   'Sagital na linha média, em 3D',
 ];
-/** Lado maior do corte, em pixels do exame, antes da ampliação final. */
-const MAX_SIDE = 900;
-/** A reconstrução 3D custa dezenas de amostras por pixel: imagem menor. */
-const MAX_SIDE_3D = 640;
 const LOCATOR_SIDE = 240;
 
 const imageCache = useImageCacheStore();
@@ -71,8 +73,10 @@ const source = ref<'ia' | 'local' | ''>('');
 const comment = ref('');
 const recipe = shallowRef<Recipe | null>(null);
 const history = shallowRef<Recipe[]>([]);
-const volume = shallowRef<WorldVolume | null>(null);
-const landmarks = shallowRef<Landmarks | null>(null);
+/** O exame endireitado (eixos do paciente) e como veio do aparelho. */
+const spaces = shallowRef<Record<Recipe['alinhamento'], Space> | null>(null);
+/** Referências do exame endireitado (para a IA e os pedidos). */
+const landmarks = computed(() => spaces.value?.paciente.lm ?? null);
 const locator = shallowRef<CutJob | null>(null);
 /** Nível do localizador escolhido à mão (mm); null = o padrão. */
 const locatorAt = ref<number | null>(null);
@@ -84,13 +88,23 @@ const claude = shallowRef<ClaudeSample | null>(null);
 claudeSample().then((sample) => {
   claude.value = sample;
 });
-let job = 0;
+const spaceOf = (target: Recipe) => spaces.value?.[target.alinhamento] ?? null;
 
-/** Texto de andamento: o 3D demora, então mostra a porcentagem. */
-const progress = (target: Recipe, row: number, cut: CutJob) =>
-  target.projecao === '3d'
-    ? `Reconstruindo em 3D… ${Math.round((100 * row) / cut.image.height)}%`
-    : 'Desenhando…';
+const strip = useStrip({
+  open: () => directorMode.open,
+  spaceOf,
+  draw: (job, target, preview) => {
+    if (!cutCanvas.value) return;
+    const caption = preview
+      ? `${describeOf(target)} · esboço`
+      : describeOf(target);
+    drawCut(cutCanvas.value, job, target, caption);
+    renderLocator();
+  },
+});
+
+const describeOf = (target: Recipe) =>
+  describeRecipe(target, spaceOf(target)?.lm);
 
 const pause = () => new Promise<void>((resolve) => setTimeout(resolve));
 
@@ -99,8 +113,8 @@ async function prepare() {
   const id = currentImageID.value;
   const image = imageCache.getVtkImageData(id);
   const scalars = image?.getPointData().getScalars();
-  volume.value = null;
-  landmarks.value = null;
+  spaces.value = null;
+  strip.reset();
   recipe.value = null;
   history.value = [];
   notes.value = [];
@@ -115,9 +129,15 @@ async function prepare() {
     scalars.getData() as ArrayLike<number>,
     image.getDimensions() as Vec3
   );
-  volume.value = vol;
-  landmarks.value = findLandmarks(vol);
-  notes.value = [...landmarks.value.notes];
+  const lm = findLandmarks(vol);
+  const roll = estimateRoll(vol, lm);
+  const straight = alignedVolume(vol, roll);
+  const straightLm = straight === vol ? lm : findLandmarks(straight);
+  spaces.value = {
+    aparelho: { vol, lm },
+    paciente: { vol: straight, lm: straightLm },
+  };
+  notes.value = [...straightLm.notes, ...rollNotes(roll.angle)];
   busy.value = '';
 }
 
@@ -142,51 +162,33 @@ const engine = computed(() => {
 });
 
 const understood = computed(() =>
-  recipe.value ? describeRecipe(recipe.value, landmarks.value ?? undefined) : ''
+  recipe.value ? describeOf(recipe.value) : ''
 );
 const estimated = computed(
   () => !!recipe.value && isEstimated(recipe.value.referencia)
 );
 
-/** Desenha o corte em fatias de ~40 ms, para a página continuar respondendo. */
-async function render() {
-  const vol = volume.value;
-  const lm = landmarks.value;
-  const target = recipe.value;
-  if (!vol || !lm || !target) return;
-  job += 1;
-  const mine = job;
-  busy.value = 'Desenhando…';
-  await pause();
-  const solid = target.projecao === '3d';
-  const cut = newJob(vol, target, lm, solid ? MAX_SIDE_3D : MAX_SIDE);
-  let row = 0;
-  while (row < cut.image.height) {
-    const start = performance.now();
-    while (row < cut.image.height && performance.now() - start < 40) {
-      const next = Math.min(cut.image.height, row + 8);
-      renderRows(cut, row, next);
-      row = next;
-    }
-    busy.value = progress(target, row, cut);
-    await pause();
-    if (mine !== job) return;
-  }
-  await nextTick();
-  if (cutCanvas.value) drawCut(cutCanvas.value, cut, target, understood.value);
-  renderLocator();
-  busy.value = '';
+/** Mostra o corte da receita atual (na hora, se já estiver desenhado). */
+function render() {
+  if (recipe.value) strip.show(recipe.value);
 }
 
+let locatorKey = '';
+
 function renderLocator() {
-  const vol = volume.value;
-  const lm = landmarks.value;
   const target = recipe.value;
-  if (!vol || !lm || !target || !locatorCanvas.value) return;
+  const space = target ? spaceOf(target) : null;
+  if (!space || !target || !locatorCanvas.value) return;
+  const { vol, lm } = space;
   const base = locatorRecipe(target, lm);
   const view =
     locatorAt.value === null ? base : { ...base, ponto: locatorAt.value };
-  locator.value = renderCut(vol, view, lm, LOCATOR_SIDE);
+  // a imagem do localizador só muda com o plano dele; a linha muda sempre
+  const key = JSON.stringify({ ...view, deslocamento: 0 });
+  if (key !== locatorKey || !locator.value) {
+    locator.value = renderCut(vol, view, lm, LOCATOR_SIDE);
+    locatorKey = key;
+  }
   drawLocator(
     locatorCanvas.value,
     locator.value,
@@ -212,7 +214,7 @@ function undo() {
 }
 
 function lateralSign() {
-  const lm = landmarks.value;
+  const lm = recipe.value ? spaceOf(recipe.value)?.lm : null;
   if (!lm || !recipe.value) return 1;
   return lateralSignOf(cutPosition(recipe.value, lm), lm.midlineX);
 }
@@ -266,7 +268,13 @@ async function submit() {
     source.value = 'ia';
     comment.value = answer.comment;
     text.value = '';
-    adopt(answer.recipe);
+    // eixos e isolamento a IA pode não conhecer: o texto decide
+    const local = interpret(request, answer.recipe, lateralSign()).recipe;
+    adopt({
+      ...answer.recipe,
+      alinhamento: local.alinhamento,
+      isolar: local.isolar,
+    });
     return;
   }
   const local = interpret(request, recipe.value, lateralSign());
@@ -290,22 +298,20 @@ function onLocatorClick(event: MouseEvent) {
   const col = ((event.clientX - box.left) / box.width) * canvas.width;
   const row = ((event.clientY - box.top) / box.height) * canvas.height;
   const ponto = positionFromPixel(locator.value, col, row, recipe.value);
+  locatorKey = '';
   adopt({ ...recipe.value, referencia: 'ponto', ponto, deslocamento: 0 });
 }
 
-const NUDGE_LABELS = {
-  sagital: ['direita', 'esquerda'],
-  coronal: ['frente', 'trás'],
-  axial: ['abaixo', 'acima'],
-} as const;
-const nudgeLabels = computed(
-  () => NUDGE_LABELS[recipe.value?.plano ?? 'axial']
-);
-
-function nudge(mm: number) {
-  if (!recipe.value || busy.value) return;
-  adopt({ ...recipe.value, deslocamento: recipe.value.deslocamento + mm });
-}
+const { position, moveTo, nudge, onWheel, onKey, nudgeLabels } =
+  useStripNavigation({
+    recipe,
+    blocked: () => !!busy.value,
+    limits: (target) => {
+      const lm = spaceOf(target)?.lm;
+      return lm ? shiftLimits(target, lm) : null;
+    },
+    render,
+  });
 
 /** Faixa por onde o localizador pode andar (eixo perpendicular a ele). */
 const locatorRange = computed(() => {
@@ -329,6 +335,13 @@ function moveLocator(value: number) {
   locatorAt.value = value;
   renderLocator();
 }
+
+const drawingText = computed(() => busy.value || strip.drawing.value);
+
+// setas andam pela fita enquanto o diretor está aberto
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (directorMode.open) onKey(event);
+});
 
 function savePng() {
   cutCanvas.value?.toBlob(
@@ -382,7 +395,7 @@ function savePng() {
               >Desfazer</v-btn
             >
             <span class="text-caption" data-testid="director-busy">{{
-              busy
+              drawingText
             }}</span>
           </div>
           <div v-if="!recipe" class="mt-3">
@@ -446,6 +459,33 @@ function savePng() {
                 @update:model-value="moveLocator"
               />
             </div>
+            <div v-if="position" class="d-flex align-center ga-2 mt-3">
+              <span class="text-caption">Posição</span>
+              <v-slider
+                :model-value="position.value"
+                :min="position.min"
+                :max="position.max"
+                :step="5"
+                density="compact"
+                hide-details
+                aria-label="Posição do corte"
+                data-testid="director-position"
+                @update:model-value="moveTo"
+              />
+              <span class="text-caption director-mm"
+                >{{ position.value > 0 ? '+' : ''
+                }}{{ Math.round(position.value) }} mm</span
+              >
+            </div>
+            <div
+              class="text-caption director-strip"
+              data-testid="director-strip"
+            >
+              {{ strip.stripText.value }}
+              <span v-if="strip.stripText.value"
+                >· roda do mouse ou ← → para andar</span
+              >
+            </div>
             <div class="d-flex align-center flex-wrap ga-2 mt-2">
               <v-btn
                 size="small"
@@ -484,6 +524,7 @@ function savePng() {
             ref="cutCanvas"
             class="director-cut"
             data-testid="director-cut"
+            @wheel="onWheel"
           />
           <div v-if="!recipe" class="text-medium-emphasis">
             Descreva a imagem ao lado. O corte é desenhado uma vez, sem usar a
@@ -535,6 +576,16 @@ function savePng() {
   font-size: 13px;
   line-height: 1.35;
 }
+.director-mm {
+  min-width: 56px;
+  text-align: right;
+}
+
+.director-strip {
+  min-height: 18px;
+  opacity: 0.7;
+}
+
 .director-warn {
   color: #ffd166;
 }

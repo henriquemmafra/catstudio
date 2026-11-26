@@ -98,7 +98,8 @@ describe('diretor: reconstrução 3D recortada', () => {
       60
     );
     // corte acima da cabeça, olhando para cima: só ar
-    expect(colorAt(white, [0, 0, 420])).toEqual([255, 255, 255]);
+    // (o início de cada raio varia um pouco por pixel: tolera 1–2 tons)
+    colorAt(white, [0, 0, 420]).forEach((c) => expect(c).toBeGreaterThan(250));
   });
 
   it('estilo "só osso" deixa as partes moles transparentes', () => {

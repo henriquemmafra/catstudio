@@ -114,6 +114,25 @@ Os presets de cor do VolView continuam lá; escolher um deles tira a paleta.
 As paletas prontas foram desenhadas pelos valores típicos de TC e só foram
 vistas em fantoma: os pontos provavelmente pedem ajuste no exame real.
 
+### Diretor de arte: andar pelos cortes, paciente girado, só os pulmões
+
+- **Andar sem esperar**: depois do primeiro corte, os vizinhos (de 5 em 5 mm,
+  até 10 cm para cada lado) são desenhados sozinhos em segundo plano. O
+  controle **Posição**, a roda do mouse em cima do corte e as setas ← → mostram
+  os que já estão prontos na hora. No 3D aparece antes um esboço em resolução
+  menor enquanto o completo é feito. Andar não entra no "Desfazer".
+- **Paciente girado no aparelho**: o diretor mede o giro do paciente em torno
+  do eixo do corpo (pela simetria do contorno e das costelas na altura dos
+  pulmões) e, por padrão, corta nos eixos do paciente endireitado. O giro
+  medido aparece num aviso. "do aparelho" volta aos eixos do tomógrafo;
+  "ajustado" volta aos do paciente. Só corrige o giro em torno do eixo do
+  corpo (deitado de lado), não a inclinação da cabeça para os pés.
+- **Só os pulmões em 3D** ("só o pulmão em 3D", "pulmões isolados", "árvore
+  brônquica"): mostra os dois pulmões inteiros, vistos de fora, com o
+  parênquima translúcido e os vasos e lesões dentro; o resto do corpo some.
+  "mostra tudo" volta. A região do pulmão é a do ar interno, então vasos
+  grandes do hilo e lesões coladas na parede podem ficar de fora.
+
 ### Iluminação, fundo e exportação em alta
 
 - **Renderização → Iluminação e fundo**: presets Estúdio, Dramático, Suave e
