@@ -96,6 +96,24 @@ Leve e Equilibrado) e recomeça se o modo de desempenho mudar; estruturas que se
 tocam (osso encostado em vaso contrastado) saem juntas no clique — separe antes
 com o laço; ainda não entra na sessão salva.
 
+### Cores por tecido
+
+**Renderização → Cores por tecido** troca a curva crua do VolView por uma
+lista de pontos com nome: a partir de tal densidade (HU), tal cor e tal
+opacidade; entre dois pontos a mudança é gradual.
+
+- Sete paletas prontas: Natural, Vascular, Osso marfim, Músculo e osso,
+  Pulmão e vias aéreas, Vidro azul, Metal e stents.
+- Cada ponto tem cor, nome, densidade em HU e opacidade, editáveis; a vista
+  3D acompanha na hora. Dá para acrescentar e tirar pontos.
+- **Salvar** guarda a paleta com o seu nome (fica no navegador).
+- No 3D, os dois botões do mouse juntos deslocam a paleta inteira (para
+  cima/baixo, 2 HU por pixel) e mudam a opacidade (para os lados).
+
+Os presets de cor do VolView continuam lá; escolher um deles tira a paleta.
+As paletas prontas foram desenhadas pelos valores típicos de TC e só foram
+vistas em fantoma: os pontos provavelmente pedem ajuste no exame real.
+
 ### Iluminação, fundo e exportação em alta
 
 - **Renderização → Iluminação e fundo**: presets Estúdio, Dramático, Suave e
@@ -265,11 +283,11 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   passam; 1 falha só porque baixa um arquivo de data.kitware.com, sem
   acesso à internet no ambiente de teste).
 - **Esculpir o 3D, osso, luz, vistas pretas e tela inicial**: 51 testes
-  unitários (borracha; caixa de corte girada; tirar mesa com parede torácica fina, mesa encostada e traqueia
+  unitários, mais 9 das paletas por tecido (borracha; caixa de corte girada; tirar mesa com parede torácica fina, mesa encostada e traqueia
   aberta no primeiro corte; janela do 3D; laço, estrutura ligada, fragmentos, clique com caixa de corte,
   crescer por camadas, detecção e correção de osso, volume de dois
   componentes, desfazer, presets de luz, limite da exportação, recuperação do
-  contexto de vídeo) e 7 testes no navegador (girar a caixa de corte e borracha; dois botões e tirar mesa; laço, clique, giro e desfazer;
+  contexto de vídeo) e 8 testes no navegador (cores por tecido; girar a caixa de corte e borracha; dois botões e tirar mesa; laço, clique, giro e desfazer;
   osso translúcido e escondido e crescer segurando; presets de luz, fundo e
   exportação 2×; vistas que voltam depois da perda do contexto WebGL; botão
   da tela inicial).

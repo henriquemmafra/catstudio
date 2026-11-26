@@ -5,13 +5,16 @@
  * de opacidade do preset, como a janela nas vistas 2D:
  *  - para cima/baixo: nível — a curva anda para tecidos menos/mais densos;
  *  - para a direita/esquerda: mais/menos opaco.
- * Só vale para presets de pontos (os de TC); nos outros o gesto não faz nada.
+ * Vale para os presets de pontos (os de TC) e para as paletas por tecido do
+ * CatStudio; nos outros o gesto não faz nada.
  */
 import { type Ref, reactive } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import vtkPiecewiseFunctionProxy from '@kitware/vtk.js/Proxy/Core/PiecewiseFunctionProxy';
 import type { Maybe } from '@/src/types';
 import useVolumeColoringStore from '@/src/store/view-configs/volume-coloring';
+import type { Tweak } from '@/src/catstudio/palette';
+import { activePalette, tweakPalette } from '@/src/catstudio/paletteStore';
 
 export interface CurveShift {
   /** deslocamento horizontal, em frações da faixa de valores do exame */
@@ -43,6 +46,19 @@ export function draggedCurve(
   };
 }
 
+/** HU por pixel de arrasto, quando a vista usa uma paleta por tecido */
+export const PALETTE_HU_PER_PIXEL = 2;
+/** pixels de arrasto para a opacidade da paleta dobrar */
+export const PALETTE_GAIN_PIXELS = 220;
+
+/** Ajuste da paleta depois de arrastar (dx, dy) a partir de `start`. */
+export function draggedTweak(start: Tweak, dx: number, dy: number): Tweak {
+  return {
+    shift: start.shift + dy * PALETTE_HU_PER_PIXEL,
+    gain: start.gain * 2 ** (dx / PALETTE_GAIN_PIXELS),
+  };
+}
+
 const BOTH_BUTTONS = 3;
 
 export function useWindowDrag(
@@ -52,7 +68,12 @@ export function useWindowDrag(
 ) {
   const store = useVolumeColoringStore();
   const status = reactive({ active: false, level: 0, opacity: 0 });
-  let origin: { x: number; y: number; curve: CurveShift } | null = null;
+  let origin: {
+    x: number;
+    y: number;
+    curve: CurveShift | null;
+    tweak: Tweak | null;
+  } | null = null;
   // depois de soltar um dos botões, o outro não pode "pular" a rotação
   let swallowing = false;
 
@@ -78,9 +99,16 @@ export function useWindowDrag(
   const start = (event: PointerEvent) => {
     if (swallowing || event.buttons !== BOTH_BUTTONS || !inside(event))
       return false;
-    const curve = currentCurve();
-    if (!curve) return false;
-    origin = { x: event.clientX, y: event.clientY, curve };
+    const id = imageID.value;
+    const palette = id ? activePalette(viewID.value, id) : null;
+    const curve = palette ? null : currentCurve();
+    if (!palette && !curve) return false;
+    origin = {
+      x: event.clientX,
+      y: event.clientY,
+      curve,
+      tweak: palette ? { ...palette.tweak } : null,
+    };
     swallowing = true;
     status.active = true;
     return true;
@@ -95,18 +123,28 @@ export function useWindowDrag(
     { capture: true }
   );
 
-  const apply = (event: PointerEvent) => {
-    if (!origin || !imageID.value) return;
-    const next = draggedCurve(
-      origin.curve,
-      event.clientX - origin.x,
-      event.clientY - origin.y
-    );
-    const [low, high] = store.getConfig(viewID.value, imageID.value)
+  const applyTweak = (from: Tweak, dx: number, dy: number) => {
+    const next = draggedTweak(from, dx, dy);
+    tweakPalette({ viewID: viewID.value, imageID: imageID.value! }, next);
+    status.level = Math.round(next.shift);
+    status.opacity = Math.round((next.gain - 1) * 100);
+  };
+
+  const applyCurve = (from: CurveShift, dx: number, dy: number) => {
+    const next = draggedCurve(from, dx, dy);
+    const [low, high] = store.getConfig(viewID.value, imageID.value!)
       ?.opacityFunction.mappingRange ?? [0, 1];
     status.level = Math.round(next.shift * (high - low));
     status.opacity = Math.round(-next.shiftAlpha * 100);
-    store.updateOpacityFunction(viewID.value, imageID.value, next);
+    store.updateOpacityFunction(viewID.value, imageID.value!, next);
+  };
+
+  const apply = (event: PointerEvent) => {
+    if (!origin || !imageID.value) return;
+    const dx = event.clientX - origin.x;
+    const dy = event.clientY - origin.y;
+    if (origin.tweak) applyTweak(origin.tweak, dx, dy);
+    else if (origin.curve) applyCurve(origin.curve, dx, dy);
   };
 
   useEventListener(

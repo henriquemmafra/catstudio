@@ -1151,3 +1151,64 @@ def test_girar_a_caixa_de_corte_e_borracha(session):
     page.get_by_test_id("sculpt-undo").click()
     assert esfera(_sculpt_shot(page, view)) > 0.9 * esfera(inteiro)
     assert not session.errors, session.errors
+
+
+def _rgb_3d(page, view):
+    from PIL import Image
+    page.wait_for_timeout(2500)
+    im = np.asarray(Image.open(io.BytesIO(view.screenshot())).convert("RGB")).astype(float)
+    return im[60:-60, 40:-40]
+
+
+def test_cores_por_tecido_paleta_edicao_e_dois_botoes(session):
+    """Escolher uma paleta por tecido recolore o 3D; editar um ponto muda a
+    imagem na hora; salvar cria uma paleta própria; e os dois botões do mouse
+    deslocam a paleta inteira."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    page.get_by_text("RENDERIZAÇÃO").first.click()
+    page.get_by_text("Cores por tecido").first.click()
+    # vermelho menos azul, só nos pixels com alguma coisa
+    vermelhidao = lambda im: float((im[..., 0] - im[..., 2])[im.sum(axis=2) > 90].mean())
+    claros = lambda im: int((im.sum(axis=2) > 90).sum())
+
+    page.get_by_test_id("palette-vascular").click()
+    vascular = _rgb_3d(page, view)
+    assert vermelhidao(vascular) > 60, vermelhidao(vascular)
+    page.get_by_test_id("palette-vidro").click()
+    vidro = _rgb_3d(page, view)
+    assert vermelhidao(vidro) < -30, vermelhidao(vidro)
+
+    # editar: o ponto "Contraste" da paleta azul vira verde e opaco
+    ponto = page.get_by_test_id("palette-stop-1")
+    ponto.locator("input[type=color]").fill("#00ff00")
+    ponto.locator("input[type=range]").fill("100")
+    editado = _rgb_3d(page, view)
+    verde = lambda im: float((im[..., 1] - im[..., 0])[im.sum(axis=2) > 90].mean())
+    assert verde(editado) > verde(vidro) + 20, (verde(vidro), verde(editado))
+
+    page.get_by_test_id("palette-title").fill("Verde de teste")
+    page.get_by_test_id("palette-save").click()
+    assert page.get_by_role("button", name="Verde de teste").count() == 1
+    assert page.get_by_test_id("palette-delete").count() == 1
+
+    # dois botões: arrastar para cima traz tecidos menos densos (mais coisa na tela)
+    caixa = view.bounding_box()
+    cx, cy = caixa["x"] + caixa["width"] / 2, caixa["y"] + caixa["height"] / 2
+    page.get_by_test_id("palette-vascular").click()
+    antes = _rgb_3d(page, view)
+    page.mouse.move(cx + 120, cy + 150)
+    page.mouse.down(button="left")
+    page.mouse.down(button="right")
+    page.mouse.move(cx + 120, cy + 50, steps=6)      # -200 HU
+    page.mouse.up(button="right")
+    page.mouse.up(button="left")
+    depois = _rgb_3d(page, view)
+    assert claros(depois) > 1.5 * claros(antes), (claros(antes), claros(depois))
+
+    page.get_by_role("button", name="Verde de teste").click()
+    page.get_by_test_id("palette-delete").click()
+    assert page.get_by_role("button", name="Verde de teste").count() == 0
+    assert not session.errors, session.errors

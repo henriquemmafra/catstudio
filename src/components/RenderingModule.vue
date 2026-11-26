@@ -8,6 +8,7 @@ import {
 import EnFaceControlPanel from '@/src/enface/EnFaceControlPanel.vue';
 import VolumeProperties from './VolumeProperties.vue';
 import LightLookControls from '@/src/catstudio/components/LightLookControls.vue';
+import PaletteEditor from '@/src/catstudio/components/PaletteEditor.vue';
 import VolumeRendering from './VolumeRendering.vue';
 import VolumePresets from './VolumePresets.vue';
 import LayerList from './LayerList.vue';
@@ -19,6 +20,7 @@ export default defineComponent({
     VolumePresets,
     VolumeProperties,
     LightLookControls,
+    PaletteEditor,
     LayerList,
     EnFaceControlPanel,
     PerformanceSelect,
@@ -136,6 +138,18 @@ export default defineComponent({
                 </v-expansion-panel-title>
                 <v-expansion-panel-text>
                   <volume-presets :view-id="view3DId" />
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+
+              <v-expansion-panel value="palette">
+                <v-expansion-panel-title>
+                  <v-icon class="flex-grow-0 mr-4"
+                    >mdi-format-color-fill</v-icon
+                  >
+                  Cores por tecido
+                </v-expansion-panel-title>
+                <v-expansion-panel-text>
+                  <palette-editor :view-id="view3DId" />
                 </v-expansion-panel-text>
               </v-expansion-panel>
 

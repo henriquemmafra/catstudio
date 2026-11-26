@@ -180,6 +180,7 @@ import { guardStatus } from '@/src/catstudio/renderGuard';
 import SculptPanel from '@/src/catstudio/components/SculptPanel.vue';
 import CropRotate from '@/src/catstudio/components/CropRotate.vue';
 import { useWindowDrag } from '@/src/catstudio/useWindowDrag';
+import { displayPresetName } from '@/src/catstudio/paletteStore';
 
 interface Props {
   viewId: string;
@@ -276,8 +277,8 @@ const coloringStore = useVolumeColoringStore();
 const coloringConfig = computed(() =>
   coloringStore.getConfig(viewId.value, currentImageID.value)
 );
-const presetName = computed(
-  () => coloringConfig.value?.transferFunction.preset.replace(/-/g, ' ') ?? ''
+const presetName = computed(() =>
+  displayPresetName(coloringConfig.value?.transferFunction.preset ?? '')
 );
 </script>
 
