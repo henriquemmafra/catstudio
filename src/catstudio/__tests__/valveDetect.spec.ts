@@ -125,3 +125,24 @@ describe('CatStudio — eixos do paciente e lado do plano', () => {
     }
   });
 });
+
+describe('CatStudio — inclinar o anel', () => {
+  const flat = planeFromPoints([10, 10, 30], [30, 10, 30], [20, 30, 30])!;
+
+  it('zero graus não muda nada; a inclinação pende a normal para o eixo pedido', async () => {
+    const { tiltPlane } = await import('../valveDetect');
+    expect(tiltPlane(flat, 0, 0)).toBe(flat);
+    const tilted = tiltPlane(flat, 30, 0);
+    const along = (a: number[], b: number[]) =>
+      a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    // 30° entre a normal nova e a antiga, no plano de n e u
+    expect(along(tilted.n, flat.n)).toBeCloseTo(Math.cos(Math.PI / 6));
+    expect(along(tilted.n, flat.v)).toBeCloseTo(0);
+    expect(along(tilted.n, flat.u) * along(flat.n, flat.n)).toBeGreaterThan(0);
+    // base continua ortonormal e o centro não se mexe
+    expect(along(tilted.u, tilted.n)).toBeCloseTo(0);
+    expect(along(tilted.v, tilted.n)).toBeCloseTo(0);
+    expect(along(tilted.u, tilted.v)).toBeCloseTo(0);
+    expect(tilted.center).toEqual(flat.center);
+  });
+});

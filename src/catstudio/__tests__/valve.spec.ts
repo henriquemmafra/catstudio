@@ -144,6 +144,15 @@ describe('CatStudio — modo Valvas', () => {
     };
     expect(lit(r.draw(pts, { ...base, style: 'holo' }))).toBeGreaterThan(300);
     expect(lit(r.draw(pts, { ...base, style: 'solid' }))).toBeGreaterThan(300);
+    // corte da frente: tira o que está perto do observador; com o corte no
+    // fundo não sobra nada
+    for (const style of ['holo', 'solid'] as const) {
+      const full = lit(r.draw(pts, { ...base, style }));
+      const half = lit(r.draw(pts, { ...base, style, clip: 0 }));
+      expect(half).toBeGreaterThan(0);
+      expect(half).toBeLessThan(full);
+      expect(lit(r.draw(pts, { ...base, style, clip: -100 }))).toBe(0);
+    }
   });
 });
 
@@ -215,6 +224,41 @@ function thinLeaflet(): Volume {
       }
   return { data, dims: [N, N, NZ], spacing: [0.4, 0.4, 0.4] };
 }
+
+describe('CatStudio — limpar a poeira', () => {
+  it('pedaço solto pequeno sai; o cálcio e a parede ficam', () => {
+    // tubo de sangue com uma bolinha de tecido solta na luz (raio 1,5 mm)
+    const n = 80;
+    const sp = 0.5;
+    const data = new Int16Array(n * n * n);
+    for (let k = 0; k < n; k++)
+      for (let j = 0; j < n; j++)
+        for (let i = 0; i < n; i++) {
+          const x = (i - n / 2) * sp;
+          const y = (j - n / 2) * sp;
+          const speck = Math.hypot(x - 4, y, k * sp - 20) < 1.5;
+          data[i + n * (j + n * k)] =
+            Math.hypot(x, y) < 12 && !speck ? 400 : 50;
+        }
+    const tube: Volume = { data, dims: [n, n, n], spacing: [sp, sp, sp] };
+    const ring = planeFromPoints([14, 17, 20], [26, 17, 20], [20, 26, 20])!;
+    const cube = sampleCube(tube, ring);
+    const options = { radius: 15, from: -6, to: 6, ...defaultThresholds(400) };
+    const near = (mesh: ValveMesh) => {
+      let inside = 0;
+      for (let v = 0; v < mesh.kinds.length; v++)
+        if (Math.hypot(mesh.positions[3 * v], mesh.positions[3 * v + 1]) < 8)
+          inside += 1;
+      return inside;
+    };
+    const kept = extractSurface(cube, { ...options, minFragment: 0 });
+    const cleaned = extractSurface(cube, { ...options, minFragment: 60 });
+    expect(near(kept)).toBeGreaterThan(50);
+    expect(near(cleaned)).toBe(0);
+    // a parede (um só pedaço grande) continua inteira
+    expect(cleaned.kinds.length).toBe(kept.kinds.length - near(kept));
+  });
+});
 
 describe('CatStudio — folheto fino não sai furado', () => {
   it('fecha os furos de volume parcial e mantém os orifícios de verdade', () => {

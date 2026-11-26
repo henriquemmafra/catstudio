@@ -28,7 +28,11 @@ import {
   type Volume,
 } from '@/src/catstudio/valve';
 import { createValveRenderer } from '@/src/catstudio/valveRender';
-import { detectAorticValve, orientPlane } from '@/src/catstudio/valveDetect';
+import {
+  detectAorticValve,
+  orientPlane,
+  tiltPlane,
+} from '@/src/catstudio/valveDetect';
 import { pinImage, unpinImage } from '@/src/catstudio/lazy';
 import { untilLoaded } from '@/src/composables/untilLoaded';
 import { useCurrentImage } from '@/src/composables/useCurrentImage';
@@ -54,8 +58,21 @@ const recording = ref(false);
 
 const cubes = shallowRef<Cube[]>([]);
 const frames = shallowRef<ValveMesh[]>([]);
-/** Plano achado pela detecção automática (tem precedência sobre os pontos). */
-const autoPlane = shallowRef<Plane | null>(null);
+/** Anel em uso (achado sozinho ou marcado por três pontos), antes de inclinar. */
+const ring = shallowRef<Plane | null>(null);
+const ringAuto = ref(false);
+/** Inclinação do anel, em graus, nos dois eixos do seu plano. */
+const lean = reactive({ a: 0, b: 0 });
+/** Faixa reconstruída ao longo do eixo da valva (mm a partir do anel). */
+const span = ref<[number, number]>([
+  -VALVES.aortica.below,
+  VALVES.aortica.above,
+]);
+/** Corte da frente: mm retirados do lado do observador. */
+const cut = ref(0);
+const CUT_REACH = 40;
+/** Pedaços soltos menores que isto (mm² de superfície) são retirados. */
+const dust = ref(60);
 const phase = ref(0);
 const view = reactive({ spin: 0.6, tilt: 0.95 });
 
@@ -143,22 +160,23 @@ function drawPick() {
     const here = Math.abs(p[2] / vol.spacing[2] - slice.value) < 1.5;
     ctx.strokeStyle = here ? '#ffd24a' : 'rgba(255,210,74,.45)';
     ctx.fillStyle = ctx.strokeStyle;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(x, y, 6, 0, 2 * Math.PI);
+    ctx.arc(x, y, 9, 0, 2 * Math.PI);
     ctx.stroke();
-    ctx.font = '600 13px sans-serif';
-    ctx.fillText(String(n + 1), x + 9, y - 7);
+    ctx.font = '600 16px sans-serif';
+    ctx.fillText(String(n + 1), x + 12, y - 9);
   });
-  const found = autoPlane.value;
+  const found = plane.value;
   if (found) {
     const c = found.center;
     const x = ((c[0] / vol.spacing[0] - r.x) / r.w) * cv.width;
     const y = ((c[1] / vol.spacing[1] - r.y) / r.h) * cv.height;
     const here = Math.abs(c[2] / vol.spacing[2] - slice.value) < 1.5;
-    ctx.strokeStyle = here ? '#ffd24a' : 'rgba(255,210,74,.45)';
+    ctx.strokeStyle = here ? '#ffd24a' : 'rgba(255,210,74,.6)';
     ctx.fillStyle = ctx.strokeStyle;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
+    ctx.setLineDash(here ? [] : [10, 7]);
     ctx.beginPath();
     ctx.arc(
       x,
@@ -168,11 +186,12 @@ function drawPick() {
       2 * Math.PI
     );
     ctx.stroke();
+    ctx.setLineDash([]);
     ctx.beginPath();
-    ctx.arc(x, y, 3, 0, 2 * Math.PI);
+    ctx.arc(x, y, 5, 0, 2 * Math.PI);
     ctx.fill();
-    ctx.font = '600 13px sans-serif';
-    ctx.fillText('anel', x + 9, y - 7);
+    ctx.font = '600 15px sans-serif';
+    ctx.fillText(here ? 'anel' : 'anel (em outro corte)', x + 10, y - 9);
   }
 }
 
@@ -185,14 +204,67 @@ function toSlicePixel(e: MouseEvent, vol: Volume) {
   };
 }
 
-function onPickClick(e: MouseEvent) {
+/** Arrastando o anel no corte (só redesenha; a valva é refeita ao soltar). */
+let ringDrag = false;
+
+function onPickDown(e: PointerEvent) {
   const vol = volume.value;
-  if (!vol || points.value.length >= 3 || autoPlane.value) return;
+  const now = plane.value;
+  if (!vol || !now) return;
+  const { i, j } = toSlicePixel(e, vol);
+  const dx = i * vol.spacing[0] - now.center[0];
+  const dy = j * vol.spacing[1] - now.center[1];
+  if (Math.hypot(dx, dy) > radius.value) return;
+  ringDrag = true;
+  (e.target as HTMLElement).setPointerCapture(e.pointerId);
+}
+
+function onPickMove(e: PointerEvent) {
+  const vol = volume.value;
+  if (!ringDrag || !vol || !ring.value) return;
+  const { i, j } = toSlicePixel(e, vol);
+  // o anel vem para o corte que está na tela
+  ring.value = {
+    ...ring.value,
+    center: [
+      i * vol.spacing[0],
+      j * vol.spacing[1],
+      slice.value * vol.spacing[2],
+    ],
+  };
+}
+
+function addPoint(e: PointerEvent, vol: Volume) {
   const { i, j } = toSlicePixel(e, vol);
   points.value = [
     ...points.value,
     [i * vol.spacing[0], j * vol.spacing[1], slice.value * vol.spacing[2]],
   ];
+  if (points.value.length < 3) return;
+  const marked = planeFromPoints(
+    points.value[0],
+    points.value[1],
+    points.value[2]
+  );
+  if (!marked) {
+    message.value = 'Os três pontos estão alinhados. Refaça os pontos.';
+    return;
+  }
+  // a ordem dos cliques não pode decidir de que lado ficam as cúspides
+  ring.value = orientPlane(marked, valve.value, direction.value);
+  ringAuto.value = false;
+  buildCurrent();
+}
+
+function onPickUp(e: PointerEvent) {
+  const vol = volume.value;
+  if (!vol) return;
+  if (ringDrag) {
+    ringDrag = false;
+    buildCurrent();
+    return;
+  }
+  if (!ring.value && points.value.length < 3) addPoint(e, vol);
 }
 
 function onPickWheel(e: WheelEvent) {
@@ -211,7 +283,11 @@ function onPickWheel(e: WheelEvent) {
 
 function resetPoints() {
   points.value = [];
-  autoPlane.value = null;
+  ring.value = null;
+  ringAuto.value = false;
+  lean.a = 0;
+  lean.b = 0;
+  cut.value = 0;
   cubes.value = [];
   frames.value = [];
   message.value = '';
@@ -219,17 +295,9 @@ function resetPoints() {
 
 // ---------------------------------------------------------------- extração
 
-const plane = computed(() => {
-  if (autoPlane.value) return autoPlane.value;
-  if (points.value.length < 3) return null;
-  const marked = planeFromPoints(
-    points.value[0],
-    points.value[1],
-    points.value[2]
-  );
-  // a ordem dos cliques não pode decidir de que lado ficam as cúspides
-  return marked && orientPlane(marked, valve.value, direction.value);
-});
+const plane = computed(() =>
+  ring.value ? tiltPlane(ring.value, lean.a, lean.b) : null
+);
 
 const DETECT_FAIL = {
   'sem-contraste':
@@ -272,7 +340,9 @@ async function detect() {
       Math.round(result.plane.center[2] / vol.spacing[2])
     )
   );
-  autoPlane.value = result.plane;
+  ring.value = result.plane;
+  ringAuto.value = true;
+  buildCurrent();
 }
 
 function detectIfAortic() {
@@ -280,15 +350,15 @@ function detectIfAortic() {
 }
 
 function extractAll() {
-  const cfg = VALVES[valve.value];
   const calcium = Math.max(threshold.value + 250, 650);
   frames.value = cubes.value.map((cube) =>
     extractSurface(cube, {
       radius: radius.value,
-      from: -cfg.below,
-      to: cfg.above,
+      from: span.value[0],
+      to: span.value[1],
       threshold: threshold.value,
       calcium,
+      minFragment: dust.value,
     })
   );
   const n = frames.value[phase.value]?.indices.length ?? 0;
@@ -349,17 +419,13 @@ async function loadAllPhases() {
   extractAll();
 }
 
-watch(plane, (p) => {
-  if (points.value.length === 3 && !p)
-    message.value = 'Os três pontos estão alinhados. Refaça os pontos.';
-  if (p) buildCurrent();
-});
-watch([radius, threshold], () => {
+watch([radius, threshold, span, dust], () => {
   if (cubes.value.length) extractAll();
 });
 watch(valve, (v) => {
   // outra valva = outro anel: recomeça (a aórtica é procurada sozinha)
   radius.value = VALVES[v].radius;
+  span.value = [-VALVES[v].below, VALVES[v].above];
   resetPoints();
   if (v === 'aortica') detect();
 });
@@ -397,6 +463,7 @@ function drawView(now: number) {
     zoom: (SIZE * 0.4) / (radius.value + 6),
     style: style.value,
     flip: flip.value,
+    clip: cut.value > 0 ? CUT_REACH - cut.value : undefined,
   });
   cv.getContext('2d')!.putImageData(new ImageData(rgba, SIZE, SIZE), 0, 0);
 }
@@ -470,7 +537,7 @@ watch(
   }
 );
 watch(
-  [volume, slice, points, autoPlane, radius, () => zoom.k, pickCanvas],
+  [volume, slice, points, plane, radius, () => zoom.k, pickCanvas],
   drawPick,
   {
     flush: 'post',
@@ -480,11 +547,13 @@ onBeforeUnmount(() => cancelAnimationFrame(raf));
 
 const hint = computed(() => {
   if (busy.value && !frames.value.length) return busy.value;
-  if (autoPlane.value)
-    return 'Valva aórtica localizada automaticamente (círculo no corte). Arraste a valva para girar; se o anel não estiver certo, use "Marcar à mão".';
+  const adjust =
+    'Para ajustar: vá ao corte certo e arraste o círculo amarelo; incline com os controles abaixo.';
+  if (ring.value && ringAuto.value)
+    return `Valva aórtica localizada automaticamente. ${adjust}`;
+  if (ring.value) return `Anel marcado. ${adjust}`;
   const n = points.value.length;
-  if (n < 3) return `${VALVES[valve.value].hint} Ponto ${n + 1} de 3.`;
-  return 'Arraste a valva para girar.';
+  return `${VALVES[valve.value].hint} Ponto ${Math.min(n + 1, 3)} de 3.`;
 });
 const hasResult = computed(() => frames.value.length > 0);
 const canLoadPhases = computed(
@@ -539,7 +608,9 @@ const canLoadPhases = computed(
             height="640"
             class="valve-canvas valve-pick"
             data-testid="valve-pick"
-            @click="onPickClick"
+            @pointerdown="onPickDown"
+            @pointermove="onPickMove"
+            @pointerup="onPickUp"
             @wheel.prevent="onPickWheel"
           />
           <div class="d-flex align-center mt-2 ga-3">
@@ -561,10 +632,10 @@ const canLoadPhases = computed(
               class="text-none"
               data-testid="valve-reset"
               @click="resetPoints"
-              >{{ autoPlane ? 'Marcar à mão' : 'Refazer pontos' }}</v-btn
+              >{{ ring ? 'Marcar por 3 pontos' : 'Refazer pontos' }}</v-btn
             >
             <v-btn
-              v-if="valve === 'aortica' && !autoPlane"
+              v-if="valve === 'aortica' && !ringAuto"
               size="small"
               variant="text"
               class="text-none"
@@ -575,7 +646,42 @@ const canLoadPhases = computed(
             >
           </div>
           <div class="text-caption text-medium-emphasis mt-1">
-            Roda do mouse: cortes · Ctrl + roda: zoom · clique: marca o ponto
+            Roda do mouse: cortes · Ctrl + roda: zoom ·
+            {{
+              ring ? 'arraste o círculo: move o anel' : 'clique: marca o ponto'
+            }}
+          </div>
+          <div v-if="ring" class="mt-2" data-testid="valve-lean">
+            <div class="d-flex align-center ga-3">
+              <span class="text-caption valve-label"
+                >Inclinar ↔ {{ lean.a }}°</span
+              >
+              <v-slider
+                v-model="lean.a"
+                :min="-45"
+                :max="45"
+                :step="1"
+                density="compact"
+                hide-details
+                aria-label="Inclinar o anel para os lados"
+                @end="buildCurrent"
+              />
+            </div>
+            <div class="d-flex align-center ga-3">
+              <span class="text-caption valve-label"
+                >Inclinar ↕ {{ lean.b }}°</span
+              >
+              <v-slider
+                v-model="lean.b"
+                :min="-45"
+                :max="45"
+                :step="1"
+                density="compact"
+                hide-details
+                aria-label="Inclinar o anel para frente e para trás"
+                @end="buildCurrent"
+              />
+            </div>
           </div>
         </section>
 
@@ -657,6 +763,52 @@ const canLoadPhases = computed(
                 density="compact"
                 hide-details
                 aria-label="Raio"
+              />
+            </div>
+            <div class="d-flex align-center ga-3">
+              <span class="text-caption valve-label"
+                >Altura {{ span[0] }} a {{ span[1] }} mm</span
+              >
+              <v-range-slider
+                v-model="span"
+                :min="-30"
+                :max="30"
+                :step="1"
+                density="compact"
+                hide-details
+                aria-label="Faixa ao longo do eixo da valva"
+                data-testid="valve-span"
+              />
+            </div>
+            <div class="d-flex align-center ga-3">
+              <span class="text-caption valve-label"
+                >Corte {{ cut ? `${cut} mm` : 'sem' }}</span
+              >
+              <v-slider
+                v-model="cut"
+                :min="0"
+                :max="2 * CUT_REACH"
+                :step="1"
+                density="compact"
+                hide-details
+                aria-label="Cortar a frente da imagem"
+                data-testid="valve-cut"
+                @start="autoSpin = false"
+              />
+            </div>
+            <div class="d-flex align-center ga-3">
+              <span class="text-caption valve-label"
+                >Poeira {{ dust ? `< ${dust} mm²` : 'mantém' }}</span
+              >
+              <v-slider
+                v-model="dust"
+                :min="0"
+                :max="400"
+                :step="10"
+                density="compact"
+                hide-details
+                aria-label="Retirar pedaços soltos pequenos"
+                data-testid="valve-dust"
               />
             </div>
             <div class="d-flex align-center ga-3">
@@ -746,7 +898,7 @@ const canLoadPhases = computed(
   white-space: nowrap;
 }
 .valve-label {
-  width: 110px;
+  width: 150px;
   flex: none;
 }
 @media (max-width: 900px) {

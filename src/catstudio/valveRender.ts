@@ -22,6 +22,11 @@ export interface ValveView {
   style: 'holo' | 'solid';
   /** Olhar pelo outro lado do anel. */
   flip: boolean;
+  /**
+   * Corte: tudo o que está mais perto do observador do que esta profundidade
+   * (mm a partir do centro do anel) não é desenhado. Ausente = sem corte.
+   */
+  clip?: number;
 }
 
 // cor por tipo (índice = KIND × 4): holograma em 0–1 com opacidade; sólido em 0–255
@@ -43,6 +48,7 @@ export function createValveRenderer(w: number, h: number) {
   const zbuf = new Float32Array(w * h);
   let screen = new Float32Array(0); // x, y, profundidade por vértice
   let normal = new Float32Array(0); // normal girada por vértice
+  let clip = Infinity;
 
   function background() {
     for (let y = 0; y < h; y++) {
@@ -142,7 +148,7 @@ export function createValveRenderer(w: number, h: number) {
         wa * screen[3 * a + 2] +
         wb * screen[3 * b + 2] +
         wc * screen[3 * c + 2];
-      if (depth <= zbuf[i]) return;
+      if (depth > clip || depth <= zbuf[i]) return;
       let nx = wa * normal[3 * a] + wb * normal[3 * b] + wc * normal[3 * c];
       let ny =
         wa * normal[3 * a + 1] +
@@ -203,6 +209,7 @@ export function createValveRenderer(w: number, h: number) {
         wa * screen[3 * a + 2] +
         wb * screen[3 * b + 2] +
         wc * screen[3 * c + 2];
+      if (depth > clip) return;
       // de perfil a superfície acumula mais luz (efeito de vidro)
       const edge = 1 - Math.min(1, Math.abs(nz));
       const gain = (0.3 + 1.5 * edge * edge) * (0.8 + 0.012 * depth);
@@ -236,6 +243,7 @@ export function createValveRenderer(w: number, h: number) {
     draw(mesh: ValveMesh, view: ValveView) {
       background();
       project(mesh, view);
+      clip = view.clip ?? Infinity;
       if (view.style === 'holo') drawHolo(mesh);
       else drawSolid(mesh);
       return rgba;

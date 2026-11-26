@@ -751,3 +751,25 @@ export function orientPlane(
   const n: Vec3 = [-plane.n[0], -plane.n[1], -plane.n[2]];
   return { center: plane.center, u: plane.u, v: cross(n, plane.u), n };
 }
+
+/**
+ * Inclina o plano do anel: a graus em torno de v (a normal pende para u) e
+ * b graus em torno de u (pende para v). O centro não muda.
+ */
+export function tiltPlane(plane: Plane, a: number, b: number): Plane {
+  if (!a && !b) return plane;
+  const ta = Math.tan((a * Math.PI) / 180);
+  const tb = Math.tan((b * Math.PI) / 180);
+  const n = unit([
+    plane.n[0] + plane.u[0] * ta + plane.v[0] * tb,
+    plane.n[1] + plane.u[1] * ta + plane.v[1] * tb,
+    plane.n[2] + plane.u[2] * ta + plane.v[2] * tb,
+  ]);
+  const along = dot(plane.u, n);
+  const u = unit([
+    plane.u[0] - n[0] * along,
+    plane.u[1] - n[1] * along,
+    plane.u[2] - n[2] * along,
+  ]);
+  return { center: plane.center, u, v: cross(n, u), n };
+}

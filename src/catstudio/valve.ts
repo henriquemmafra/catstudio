@@ -188,6 +188,11 @@ export interface ExtractOptions {
   threshold: number;
   /** Acima disto é cálcio (UH). */
   calcium: number;
+  /**
+   * "Poeira": pedaços soltos com menos que esta área de superfície (mm²)
+   * saem da malha. Padrão 12 mm².
+   */
+  minFragment?: number;
 }
 
 export function defaultThresholds(blood: number) {
@@ -372,8 +377,8 @@ const EDGES: Array<[number, number]> = [
   [3, 7],
 ];
 
-/** Tira da malha os fragmentos soltos (ruído), menores que `minVertices`. */
-function dropFragments(mesh: ValveMesh, minVertices: number): ValveMesh {
+/** Tira da malha os pedaços soltos (ruído) com menos de `minArea` mm². */
+function dropFragments(mesh: ValveMesh, minArea: number): ValveMesh {
   const count = mesh.kinds.length;
   const parent = new Int32Array(count);
   for (let v = 0; v < count; v++) parent[v] = v;
@@ -394,17 +399,29 @@ function dropFragments(mesh: ValveMesh, minVertices: number): ValveMesh {
     parent[find(idx[t + 1])] = a;
     parent[find(idx[t + 2])] = a;
   }
-  const sizes = new Int32Array(count);
-  const calcified = new Uint8Array(count);
-  for (let v = 0; v < count; v++) {
-    const root = find(v);
-    sizes[root] += 1;
-    if (mesh.kinds[v] === KIND.calcium) calcified[root] = 1;
+  // área de cada pedaço = soma das áreas dos seus triângulos
+  const areas = new Float64Array(count);
+  const p = mesh.positions;
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = 3 * idx[t];
+    const b = 3 * idx[t + 1];
+    const c = 3 * idx[t + 2];
+    const ux = p[b] - p[a];
+    const uy = p[b + 1] - p[a + 1];
+    const uz = p[b + 2] - p[a + 2];
+    const vx = p[c] - p[a];
+    const vy = p[c + 1] - p[a + 1];
+    const vz = p[c + 2] - p[a + 2];
+    areas[find(idx[t])] +=
+      0.5 * Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
   }
+  const calcified = new Uint8Array(count);
+  for (let v = 0; v < count; v++)
+    if (mesh.kinds[v] === KIND.calcium) calcified[find(v)] = 1;
   // o cálcio fica mesmo pequeno: nódulo solto é achado, não ruído
   const keep = (v: number) => {
     const root = find(v);
-    return sizes[root] >= minVertices || calcified[root] === 1;
+    return areas[root] >= minArea || calcified[root] === 1;
   };
   const remap = new Int32Array(count).fill(-1);
   let kept = 0;
@@ -594,7 +611,7 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
     if (kinds[v] !== KIND.calcium)
       kinds[v] = votes[v] > 0 ? KIND.leaflet : KIND.wall;
 
-  // fragmentos soltos com menos de ~12 mm² de superfície são ruído
+  // pedaços soltos pequenos são ruído (cada vértice cobre ~passo² de área)
   return dropFragments(
     {
       positions: Float32Array.from(pos),
@@ -602,6 +619,6 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
       kinds,
       indices: Uint32Array.from(idx),
     },
-    Math.round(12 / (step * step))
+    opt.minFragment ?? 12
   );
 }
