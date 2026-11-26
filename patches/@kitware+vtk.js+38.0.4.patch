@@ -1,7 +1,8 @@
 diff --git a/node_modules/@kitware/vtk.js/Rendering/OpenGL/ImageResliceMapper.js b/node_modules/@kitware/vtk.js/Rendering/OpenGL/ImageResliceMapper.js
+index f336337..7f501ac 100644
 --- a/node_modules/@kitware/vtk.js/Rendering/OpenGL/ImageResliceMapper.js
 +++ b/node_modules/@kitware/vtk.js/Rendering/OpenGL/ImageResliceMapper.js
-@@ -574,7 +574,7 @@
+@@ -574,7 +574,7 @@ function vtkOpenGLImageResliceMapper(publicAPI, model) {
  		let needRebuild = false;
  		if (!model.currentRenderPass && model.lastRenderPassShaderReplacement || model.currentRenderPass && model.currentRenderPass.getShaderReplacement() !== model.lastRenderPassShaderReplacement) needRebuild = true;
  		const numValidInputs = model.currentValidInputs?.length ?? 0;
@@ -10,7 +11,7 @@ diff --git a/node_modules/@kitware/vtk.js/Rendering/OpenGL/ImageResliceMapper.js
  			model.lastHaveSeenDepthRequest = model.haveSeenDepthRequest;
  			model.lastNumberOfComponents = model.numberOfComponents;
  			model.lastMultiTexturePerVolumeEnabled = model.multiTexturePerVolumeEnabled;
-@@ -724,33 +724,25 @@
+@@ -724,33 +724,25 @@ function vtkOpenGLImageResliceMapper(publicAPI, model) {
  	}
  	function getSlabSampleLoopLines() {
  		return [
@@ -58,7 +59,7 @@ diff --git a/node_modules/@kitware/vtk.js/Rendering/OpenGL/ImageResliceMapper.js
  			"  vec3 fragTCoordNeg = (WCTCMatrix0 * vec4(worldPosNeg, 1.0)).xyz;",
  			"  if (!any(greaterThan(fragTCoordNeg, vec3(1.0))) && !any(lessThan(fragTCoordNeg, vec3(0.0))))",
  			"  {",
-@@ -758,11 +750,11 @@
+@@ -758,11 +750,11 @@ function vtkOpenGLImageResliceMapper(publicAPI, model) {
  			"    tvalue = compositeValue(tvalue, newVal, trapezoid);",
  			"    numSlices += 1;",
  			"  }",
@@ -72,7 +73,7 @@ diff --git a/node_modules/@kitware/vtk.js/Rendering/OpenGL/ImageResliceMapper.js
  			"  vec3 fragTCoordPos = (WCTCMatrix0 * vec4(worldPosPos, 1.0)).xyz;",
  			"  if (!any(greaterThan(fragTCoordPos, vec3(1.0))) && !any(lessThan(fragTCoordPos, vec3(0.0))))",
  			"  {",
-@@ -770,11 +762,15 @@
+@@ -770,11 +762,15 @@ function vtkOpenGLImageResliceMapper(publicAPI, model) {
  			"    tvalue = compositeValue(tvalue, newVal, trapezoid);",
  			"    numSlices += 1;",
  			"  }",
@@ -90,7 +91,7 @@ diff --git a/node_modules/@kitware/vtk.js/Rendering/OpenGL/ImageResliceMapper.js
  			"}",
  			"// Finally, if slab type is *mean*, divide the sum by the numSlices",
  			"if (slabType == 2)",
-@@ -1155,7 +1151,7 @@
+@@ -1155,7 +1151,7 @@ function vtkOpenGLImageResliceMapper(publicAPI, model) {
  		let FSSource = shaders.Fragment;
  		const slabThickness = model.renderable.getSlabThickness();
  		let posVCVSDec = ["attribute vec4 vertexWC;", "varying vec4 vertexWCVSOutput;"];
@@ -100,9 +101,10 @@ diff --git a/node_modules/@kitware/vtk.js/Rendering/OpenGL/ImageResliceMapper.js
  		VSSource = ShaderProgram_default.substitute(VSSource, "//VTK::PositionVC::Dec", posVCVSDec).result;
  		let posVCVSImpl = ["gl_Position = MCPCMatrix * vertexWC;", "vertexWCVSOutput = vertexWC;"];
 diff --git a/node_modules/@kitware/vtk.js/Rendering/OpenGL/Renderer.js b/node_modules/@kitware/vtk.js/Rendering/OpenGL/Renderer.js
+index ba92841..a59d269 100644
 --- a/node_modules/@kitware/vtk.js/Rendering/OpenGL/Renderer.js
 +++ b/node_modules/@kitware/vtk.js/Rendering/OpenGL/Renderer.js
-@@ -87,7 +87,7 @@
+@@ -87,7 +87,7 @@ function vtkOpenGLRenderer(publicAPI, model) {
  	publicAPI.clear = () => {
  		let clearMask = 0;
  		const gl = model.context;
@@ -112,9 +114,43 @@ diff --git a/node_modules/@kitware/vtk.js/Rendering/OpenGL/Renderer.js b/node_mo
  			gl.clearColor(background[0], background[1], background[2], background[3]);
  			clearMask |= gl.COLOR_BUFFER_BIT;
 diff --git a/node_modules/@kitware/vtk.js/Rendering/OpenGL/VolumeMapper.js b/node_modules/@kitware/vtk.js/Rendering/OpenGL/VolumeMapper.js
+index d15591b..1e706ed 100644
 --- a/node_modules/@kitware/vtk.js/Rendering/OpenGL/VolumeMapper.js
 +++ b/node_modules/@kitware/vtk.js/Rendering/OpenGL/VolumeMapper.js
-@@ -868,7 +868,7 @@
+@@ -610,6 +610,14 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
+ 		if (!model._lastScale) model._lastScale = model.renderable.getInitialInteractionScale();
+ 		model._useSmallViewport = false;
+ 		if (rwi.isAnimating() && model._lastScale > 1.5) model._useSmallViewport = true;
++		// CatStudio: still frames may also render reduced, so a heavy frame can be refined in bounded steps
++		const csBefore = model.renderable.getViewSpecificProperties().CatStudioBeforeRender;
++		if (typeof csBefore === "function") csBefore();
++		const csStillScale = rwi.isAnimating() ? 0 : Number(model.renderable.getViewSpecificProperties().CatStudioStillScale) || 0;
++		if (csStillScale > 1) model._useSmallViewport = true;
++		// CatStudio: interactive frames use a measured scale instead of the once-per-second adaptation
++		const csAnimScale = rwi.isAnimating() ? Number(model.renderable.getViewSpecificProperties().CatStudioInteractionScale) || 0 : 0;
++		if (csAnimScale > 0) model._useSmallViewport = csAnimScale > 1.2;
+ 		if (!model._animationRateSubscription) model._animationRateSubscription = rwi.onAnimationFrameRateUpdate(() => {
+ 			if (model.renderable.getAutoAdjustSampleDistances()) {
+ 				const frate = rwi.getRecentAnimationFrameRate();
+@@ -621,7 +629,7 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
+ 		});
+ 		if (model._useSmallViewport) {
+ 			const size = model._openGLRenderWindow.getFramebufferSize();
+-			const scaleFactor = 1 / Math.sqrt(model._lastScale);
++			const scaleFactor = 1 / Math.sqrt(csStillScale > 1 ? csStillScale : csAnimScale > 0 ? csAnimScale : model._lastScale);
+ 			model._smallViewportWidth = Math.ceil(scaleFactor * size[0]);
+ 			model._smallViewportHeight = Math.ceil(scaleFactor * size[1]);
+ 			if (model._smallViewportHeight > size[1]) model._smallViewportHeight = size[1];
+@@ -750,6 +758,8 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
+ 		publicAPI.renderPieceStart(ren, actor);
+ 		publicAPI.renderPieceDraw(ren, actor);
+ 		publicAPI.renderPieceFinish(ren, actor);
++		const csAfter = model.renderable.getViewSpecificProperties().CatStudioAfterRender;
++		if (typeof csAfter === "function") csAfter();
+ 	};
+ 	publicAPI.updateBufferObjects = (ren, actor) => {
+ 		if (publicAPI.getNeedToRebuildBufferObjects(ren, actor)) publicAPI.buildBufferObjects(ren, actor);
+@@ -868,7 +878,7 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
  			const reBuildTex = !tex?.oglObject?.getHandle() || tex?.hash !== scalarsHash;
  			const updatedExtents = volumeProperty.getUpdatedExtents();
  			const hasUpdatedExtents = !!updatedExtents.length;

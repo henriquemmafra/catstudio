@@ -8,6 +8,11 @@ export function useResetViewsEvents() {
   return { onClick: clickEvent.on };
 }
 
+// CatStudio: o atalho X dispara o mesmo evento do botão
+export function triggerResetViews() {
+  clickEvent.trigger();
+}
+
 export default defineComponent({
   components: {
     ControlButton,

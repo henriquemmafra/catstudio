@@ -77,6 +77,21 @@
             <span>{{ presetName }}</span>
           </div>
         </template>
+        <template #bottom-left>
+          <div
+            v-if="guard.refining || guard.limited"
+            class="annotation-cell guard-badge"
+            data-testid="render-guard-badge"
+          >
+            <template v-if="guard.refining">Refinando o 3D…</template>
+            <template v-else>
+              Resolução reduzida para não travar
+              <span class="guard-detail"
+                >(quadro completo ≈ {{ guardSeconds }} s nesta placa)</span
+              >
+            </template>
+          </div>
+        </template>
         <template #bottom-right>
           <div class="annotation-cell" @click.stop>
             <ViewTypeSwitcher :view-id="viewId" :image-id="currentImageID" />
@@ -105,6 +120,7 @@ import { onVTKEvent } from '@/src/composables/onVTKEvent';
 import { useViewStore } from '@/src/store/views';
 import ViewTypeSwitcher from '@/src/components/ViewTypeSwitcher.vue';
 import { captureViewPNG } from '@/src/catstudio/capture';
+import { guardStatus } from '@/src/catstudio/renderGuard';
 
 interface Props {
   viewId: string;
@@ -143,6 +159,12 @@ function exportPNG() {
   if (vtkView.value) captureViewPNG(vtkView.value, '3d');
 }
 
+// CatStudio: aviso da trava de segurança (resolução reduzida / refinando)
+const guard = computed(() => guardStatus(viewId.value));
+const guardSeconds = computed(() =>
+  Math.max(1, Math.round(guard.value.fullEstimateMs / 1000))
+);
+
 useWebGLWatchdog(vtkView);
 useViewAnimationListener(vtkView, viewId, viewType);
 
@@ -172,6 +194,19 @@ const presetName = computed(
 <style scoped src="@/src/components/styles/utils.css"></style>
 
 <style scoped>
+.guard-badge {
+  margin-left: 44px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(20, 24, 28, 0.78);
+  color: #ffd166;
+  font-size: 12px;
+}
+
+.guard-detail {
+  color: rgba(255, 255, 255, 0.7);
+}
+
 .volume-viewer-container {
   background-color: black;
   grid-template-columns: auto;

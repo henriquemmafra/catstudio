@@ -63,3 +63,6 @@ app.use(pinia);
 app.use(VueToast);
 app.use(vuetify);
 app.mount('#app');
+
+// CatStudio: estado da interface para os testes ponta a ponta
+import('./catstudio/debug').then(({ installDebugHook }) => installDebugHook());

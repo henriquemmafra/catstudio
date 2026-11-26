@@ -40,6 +40,25 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
    livre, segmentação e "Salvar sessão" (arquivo local).
 8. Avisos de geometria (tilt, lacuna, série dividida) aparecem no sino.
 
+### Atalhos de leitura
+
+| Tecla | O que faz |
+|---|---|
+| `1` a `6` | Janela: Pulmão, Mediastino, Partes moles, Osso, Cérebro, Vias aéreas (vale para as três vistas 2D) |
+| `D` | Régua |
+| `M` | MIP em espessura na vista ativa (aperte de novo para voltar ao corte fino) |
+| `N` | MinIP em espessura na vista ativa |
+| `X` | Resetar: recentraliza as câmeras, volta a janela ao padrão e desliga MIP/MinIP |
+| `L` `Z` `H` `C` | Janela/nível, zoom, mover, cursor cruzado |
+| `?` | Lista completa |
+
+Com MIP/MinIP ligado aparece no alto da vista o modo e a espessura em mm,
+com `−` e `+` para ajustar (MIP começa em 10 mm, MinIP em 5 mm; a última
+espessura escolhida é lembrada). Se a vista ativa for a 3D, `M` e `N`
+valem para as três vistas 2D. Em relação ao VolView, mudaram: a régua
+(era `M`), mover (era `N`, agora `H`) e a seleção de segmento por número
+(agora `Alt`+número).
+
 ## O que o CatStudio acrescenta ao VolView
 
 - **Geometria DICOM verificada**: gantry inclinado, lacunas e espaçamento
@@ -58,6 +77,18 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
 - **3D leve**: a vista 3D usa uma cópia reduzida do volume e, no modo Leve,
   o 3D clássico sem sombras; as vistas 2D continuam na resolução original.
   O VolView ligava o cinematográfico completo sobre o volume inteiro.
+- **Trava de segurança do 3D**: nenhum quadro 3D sai em resolução total
+  sem ter o custo medido. Depois de qualquer mudança (câmera, preset, luz,
+  recorte), o quadro começa em 1/64 dos pixels e é refinado em etapas; o
+  tempo de cada etapa prevê o da seguinte, e se a previsão passa de 0,7 s
+  o refino para ali e a vista avisa "Resolução reduzida para não travar",
+  com o tempo estimado do quadro completo naquela placa. Enquanto se gira
+  o volume, a resolução é ajustada quadro a quadro para ~45 ms. No VolView
+  original, ligar oclusão ambiente ou subir a qualidade numa placa modesta
+  enviava um quadro de dezenas de segundos e o navegador parava de
+  responder. Detalhes em `src/catstudio/renderGuard.ts`.
+- **MIP/MinIP em espessura e atalhos de leitura** nas vistas 2D (tabela
+  acima); a projeção é feita na placa de vídeo sobre o volume original.
 - **Privacidade**: nome, ID e nascimento do paciente nunca aparecem (viram
   "Paciente 1"); sem telemetria, dados de exemplo ou serviços remotos; o
   teste automatizado falha se a página fizer qualquer requisição externa.
@@ -68,7 +99,7 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
 
 Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
 
-- **24 testes ponta a ponta no navegador** (`catstudio-testes/`): upload
+- **29 testes ponta a ponta no navegador** (`catstudio-testes/`): upload
   real pelos seletores de arquivo e de pasta, volume lido da aplicação e
   comparado voxel a voxel com um fantoma analítico — axial com pixel
   anisotrópico, implicit VR com sinal, aquisição coronal, oblíqua dupla,
@@ -82,8 +113,15 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   derrubar a aba, com só a série exibida na memória e a anterior liberada
   ao trocar de série; nesse mesmo exame, a lista de séries com a sugerida
   marcada, carregar só a escolhida, cancelar, e a vista 3D não vazia com o
-  volume reduzido.
-- **Testes unitários**: 12 da triagem de séries e do desempenho do 3D
+  volume reduzido; atalhos de janela, régua e reset; MIP mostrando um
+  objeto fora do corte e MinIP apagando um objeto denso dentro da fatia;
+  e a trava do 3D nos modos Leve e Máximo: girando o volume e trocando 15
+  vezes seguidas os ajustes cinematográficos, nenhuma tarefa da página
+  passou de 0,9 s (sem a trava, no mesmo teste, o quadro levava de 3,3 a
+  3,7 s).
+- **Testes unitários**: 16 da trava de segurança do 3D (com placas
+  simuladas de 10 ms a 40 s por quadro), 9 do MIP/MinIP, 12 da triagem de
+  séries e do desempenho do 3D
   (sugestão, redução por média de blocos na mesma posição do espaço) e 9
   do módulo de geometria (campo linear reproduzido
   exatamente após reamostrar tilt, lacuna, irregular e quadros fora de
@@ -91,7 +129,11 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   passam; 1 falha só porque baixa um arquivo de data.kitware.com, sem
   acesso à internet no ambiente de teste).
 - **Não testado**: Windows/macOS reais, GPUs reais, exames clínicos reais
-  (só fantomas sintéticos), Safari.
+  (só fantomas sintéticos), Safari. A trava do 3D foi medida com WebGL por
+  software, que é lento como uma placa fraca mas não é uma placa real: o
+  tempo de compilação de shader no Windows (ANGLE/Direct3D), que também
+  pode prender a página por alguns segundos na primeira vez que um ajuste
+  cinematográfico é ligado, não foi medido.
 
 ## Rodar localmente
 

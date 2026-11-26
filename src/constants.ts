@@ -45,6 +45,21 @@ export const perSegmentShortcut = <V>(value: (index: number) => V) =>
     SEGMENT_SHORTCUT_ACTIONS.map((action, index) => [action, value(index)])
   ) as Record<(typeof SEGMENT_SHORTCUT_ACTIONS)[number], V>;
 
+// CatStudio: janelas de TC nas teclas 1 a 6, na ordem do menu de janelas
+export const WINDOW_SHORTCUT_ACTIONS = [
+  'windowPreset1',
+  'windowPreset2',
+  'windowPreset3',
+  'windowPreset4',
+  'windowPreset5',
+  'windowPreset6',
+] as const;
+
+export const perWindowShortcut = <V>(value: (index: number) => V) =>
+  Object.fromEntries(
+    WINDOW_SHORTCUT_ACTIONS.map((action, index) => [action, value(index)])
+  ) as Record<(typeof WINDOW_SHORTCUT_ACTIONS)[number], V>;
+
 export const ACTIONS = {
   windowLevel: {
     readable: 'Activate Window/Level tool',
@@ -135,6 +150,20 @@ export const ACTIONS = {
 
   showKeyboardShortcuts: {
     readable: 'Show keyboard shortcuts dialog',
+  },
+
+  // CatStudio
+  ...perWindowShortcut((index) => ({
+    readable: `Janela ${index + 1} do menu de janelas (TC)`,
+  })),
+  slabMip: {
+    readable: 'Ligar/desligar MIP na vista ativa',
+  },
+  slabMinIp: {
+    readable: 'Ligar/desligar MinIP na vista ativa',
+  },
+  resetViews: {
+    readable: 'Resetar vistas (câmera, janela e MIP/MinIP)',
   },
 } as const;
 

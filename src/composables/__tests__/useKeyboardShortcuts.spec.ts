@@ -254,8 +254,26 @@ describe('the dispatcher', () => {
   });
 
   it('runs the action bound to a bare key', async () => {
-    await withShortcuts(() => press({ key: 'm' }));
+    await withShortcuts(() => press({ key: 'd' }));
     expect(firedActions).toContain('ruler');
+  });
+
+  // CatStudio: janelas nas teclas 1 a 6, MIP em M, MinIP em N, resetar em X
+  it('runs the CatStudio reading shortcuts', async () => {
+    await withShortcuts(() => {
+      ['1', '6', 'm', 'n', 'x'].forEach((key) => press({ key }));
+    });
+    expect(firedActions).toEqual(
+      expect.arrayContaining([
+        'windowPreset1',
+        'windowPreset6',
+        'slabMip',
+        'slabMinIp',
+        'resetViews',
+      ])
+    );
+    expect(firedActions).not.toContain('selectSegment1');
+    expect(firedActions).not.toContain('pan');
   });
 
   it('runs a modifier chord', async () => {
@@ -315,7 +333,7 @@ describe('the dispatcher', () => {
   it('suppresses the control default once a shortcut runs', async () => {
     let event: KeyboardEvent | undefined;
     await withShortcuts(() => {
-      event = press({ key: 'm' });
+      event = press({ key: 'd' });
     });
     expect(firedActions).toContain('ruler');
     expect(event!.defaultPrevented).toBe(true);

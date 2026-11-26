@@ -19,6 +19,8 @@ type Props = {
   imageId: Maybe<string>;
   axis: LPSAxis;
   frame?: number;
+  // CatStudio: a fatia espessa (MIP/MinIP) ocupa o lugar do corte fino
+  hidden?: boolean;
 };
 
 const props = defineProps<Props>();
@@ -50,7 +52,9 @@ const sliceRep = useSliceRepresentation(
 );
 
 watchEffect(() => {
-  sliceRep.actor.setVisibility(wlConfig.config.value?.visibility ?? true);
+  sliceRep.actor.setVisibility(
+    (wlConfig.config.value?.visibility ?? true) && !props.hidden
+  );
 });
 
 useBaseSliceColoring(

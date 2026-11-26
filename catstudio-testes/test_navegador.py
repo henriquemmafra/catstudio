@@ -112,9 +112,11 @@ def browser():
 
 
 class Session:
-    def __init__(self, browser, url):
+    def __init__(self, browser, url, init_script=None):
         self.url = url
         self.page = browser.new_page(viewport={"width": 1600, "height": 950}, accept_downloads=True)
+        if init_script:
+            self.page.add_init_script(init_script)
         self.external = []
         self.errors = []
         local = (url, "blob:", "data:")
@@ -444,3 +446,176 @@ def test_exame_completo_so_carrega_a_serie_exibida(session):
     assert st[first]["st"] == "incomplete"
     assert sum(x["st"] == "complete" for x in st.values()) == 1
     assert not session.errors, session.errors
+
+
+# ------------------------------------------------------------------ atalhos, MIP e MinIP
+
+def _views(page):
+    """Nome da vista → id."""
+    return dict(page.evaluate(f"() => Object.values({PINIA}._s.get('view').viewByID).map(v => [v.name, v.id])"))
+
+
+def _window(page, view_id):
+    return page.evaluate(f"""() => {{ const p = {PINIA}; const img = [...p._s.get('image-cache').imageIds][0];
+        const c = p._s.get('windowing').getConfig('{view_id}', img); return [Math.round(c.width), Math.round(c.level)]; }}""")
+
+
+def _go_to_z(page, view_id, z_mm):
+    """Leva a vista axial ao corte mais próximo de z (mm, LPS)."""
+    page.evaluate(f"""() => {{ const p = {PINIA}; const cache = p._s.get('image-cache');
+        const id = [...cache.imageIds][0]; const img = cache.getVtkImageData(id);
+        const k = Math.round(img.worldToIndex([0, 0, {z_mm}], [0, 0, 0])[2]);
+        p._s.get('viewSlice').updateConfig('{view_id}', id, {{ slice: k }}); }}""")
+    page.wait_for_timeout(600)
+
+
+def _white_pixels(png_bytes):
+    from PIL import Image
+    im = np.asarray(Image.open(io.BytesIO(png_bytes)).convert("L"))
+    h, w = im.shape
+    # sem as bordas, onde ficam os textos e o controle da espessura
+    return int((im[60:h - 60, 40:w - 40] > 235).sum())
+
+
+def test_atalhos_de_janela_regua_e_reset(session):
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    views = _views(page)
+    axial = page.get_by_test_id("vtk-view vtk-two-view").first
+    axial.click(position={"x": 200, "y": 200})
+    padrao = _window(page, views["Axial"])
+    esperado = [(1500, -600), (350, 40), (400, 50), (1800, 400), (80, 40), (1000, -426)]
+    for tecla, (largura, nivel) in zip("123456", esperado):
+        page.keyboard.press(tecla)
+        page.wait_for_timeout(200)
+        # a janela vale para as três vistas 2D
+        for nome in ("Axial", "Coronal", "Sagittal"):
+            assert _window(page, views[nome]) == [largura, nivel], (tecla, nome)
+    page.keyboard.press("d")
+    page.wait_for_timeout(200)
+    assert page.evaluate(f"() => {PINIA}._s.get('tool').currentTool") == "Ruler"
+    page.keyboard.press("m")
+    page.wait_for_timeout(300)
+    assert page.evaluate(f"() => __catstudio.slab('{views['Axial']}').mode") == "max"
+    page.keyboard.press("x")
+    page.wait_for_timeout(500)
+    assert page.evaluate(f"() => __catstudio.slab('{views['Axial']}').mode") == "off"
+    assert _window(page, views["Axial"]) == padrao
+    assert not session.errors, session.errors
+
+
+def test_mip_mostra_o_que_esta_fora_do_corte(session):
+    """Cubo de 500 HU (z de 60 a 80 mm): no corte fino em z = 90 ele não
+    aparece, nem no MIP de 10 mm (z de 85 a 95); no MIP de 30 mm (z de 75 a
+    105) aparece."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    views = _views(page)
+    axial = page.get_by_test_id("vtk-view vtk-two-view").first
+    axial.click(position={"x": 200, "y": 200})
+    page.keyboard.press("2")  # mediastino: só o que é denso fica branco
+    _go_to_z(page, views["Axial"], 90)
+    fino = _white_pixels(axial.screenshot())
+    page.keyboard.press("m")
+    page.wait_for_timeout(400)
+    assert page.get_by_test_id("slab-mode").first.inner_text() == "MIP"
+    page.wait_for_timeout(800)
+    mip10 = _white_pixels(axial.screenshot())
+    for _ in range(6):  # 10 → 30 mm
+        page.get_by_label("Aumentar espessura").first.click()
+    assert page.get_by_test_id("slab-thickness").first.inner_text() == "30 mm"
+    page.wait_for_timeout(800)
+    mip30 = _white_pixels(axial.screenshot())
+    assert abs(mip10 - fino) < 0.1 * fino + 50, (fino, mip10)
+    assert mip30 > fino + 300, (fino, mip30)
+    # desligar volta ao corte fino
+    page.keyboard.press("m")
+    page.wait_for_timeout(800)
+    assert page.get_by_test_id("slab-control").count() == 0
+    assert abs(_white_pixels(axial.screenshot()) - fino) < 0.1 * fino + 50
+    assert not session.errors, session.errors
+
+
+def test_minip_apaga_o_que_e_denso_dentro_da_fatia(session):
+    """No corte pelo centro do marcador (raio 12 mm, dentro do pulmão) ele
+    aparece; no MinIP de 30 mm some, porque a fatia inclui pulmão acima e
+    abaixo dele."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    views = _views(page)
+    axial = page.get_by_test_id("vtk-view vtk-two-view").first
+    axial.click(position={"x": 200, "y": 200})
+    page.keyboard.press("2")
+    _go_to_z(page, views["Axial"], 40)
+    fino = _white_pixels(axial.screenshot())
+    page.keyboard.press("n")
+    page.wait_for_timeout(400)
+    assert page.get_by_test_id("slab-mode").first.inner_text() == "MinIP"
+    for _ in range(8):  # 5 → 7,5 … 20 → 25 → 30 mm
+        page.get_by_label("Aumentar espessura").first.click()
+    assert page.get_by_test_id("slab-thickness").first.inner_text() == "30 mm"
+    page.wait_for_timeout(800)
+    minip = _white_pixels(axial.screenshot())
+    assert minip < fino - 300, (fino, minip)
+    assert not session.errors, session.errors
+
+
+# ------------------------------------------------------------------ trava de segurança do 3D
+
+LONG_TASKS = """window.__long = [];
+new PerformanceObserver(l => l.getEntries().forEach(e => window.__long.push(Math.round(e.duration))))
+  .observe({entryTypes: ['longtask']});"""
+
+
+def _long_tasks(page):
+    return page.evaluate("() => { const l = window.__long; window.__long = []; return l; }")
+
+
+@pytest.mark.parametrize("modo", ["leve", "maximo"])
+def test_3d_nao_prende_a_pagina(browser, url, modo):
+    """Com WebGL por software o quadro 3D em resolução total leva segundos
+    (como numa placa de vídeo fraca com o cinematográfico ligado). A trava tem
+    de manter cada quadro curto: girando, e mexendo nos ajustes."""
+    s = Session(browser, url, init_script=f"localStorage.setItem('catstudio.desempenho', '{modo}');" + LONG_TASKS)
+    try:
+        page = s.page
+        s.open_files(files_of("ax_main"))
+        page.wait_for_timeout(3000)
+        vid = _views(page)["Volume"]
+        _long_tasks(page)  # descarta o carregamento
+
+        view = page.get_by_test_id("vtk-view vtk-volume-view").first
+        box = view.bounding_box()
+        cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        page.mouse.move(cx, cy)
+        page.mouse.down()
+        for i in range(12):
+            page.mouse.move(cx + 10 * i, cy + 4 * i)
+            page.wait_for_timeout(40)
+        page.mouse.up()
+        page.wait_for_timeout(4000)
+        girando = _long_tasks(page)
+
+        # arrastar controles do cinematográfico: 15 mudanças seguidas
+        page.evaluate(f"""async () => {{ const st = {PINIA}._s.get('volumeColoring');
+            const img = Object.keys(st.configs['{vid}'])[0];
+            for (let i = 0; i < 15; i++) {{
+              st.updateCVRParameters('{vid}', img, {{ ambient: 0.1 + i * 0.02, laoKernelSize: 5 + i, volumeQuality: 1 + (i % 4) }});
+              await new Promise(r => setTimeout(r, 60));
+            }} }}""")
+        page.wait_for_timeout(6000)
+        ajustando = _long_tasks(page)
+
+        estado = page.evaluate(f"() => __catstudio.guard('{vid}')")
+        limite = 2.5 * page.evaluate("() => __catstudio.FRAME_BUDGET_MS")
+        assert max(girando + [0]) < limite, girando
+        assert max(ajustando + [0]) < limite, ajustando
+        assert not estado["refining"]
+        if estado["limited"]:
+            assert estado["scale"] > 1 and estado["fullEstimateMs"] > 0
+            assert page.get_by_test_id("render-guard-badge").count() == 1
+        std, _ = _image_std(view.screenshot())
+        assert std > 5, "vista 3D vazia"
+        assert not s.errors, s.errors
+    finally:
+        s.close()

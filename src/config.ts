@@ -10,7 +10,12 @@ import RetinalLayersThumbnail from '@/src/assets/samples/Retinal-Layers.jpg';
 import type { LayoutConfig } from './utils/layoutParsing';
 import type { ViewInfoInit } from './types/views';
 import { SampleDataset } from './types';
-import { Action, Binding, perSegmentShortcut } from './constants';
+import {
+  Action,
+  Binding,
+  perSegmentShortcut,
+  perWindowShortcut,
+} from './constants';
 
 /**
  * These are the initial view IDs.
@@ -199,12 +204,14 @@ export const DEFAULT_PRESET = 'CT-AAA';
 // Keyboard shortcuts/hotkeys. Can add modifiers: 'Shift+Ctrl+a'
 export const ACTION_TO_KEY = {
   windowLevel: 'l',
-  pan: 'n',
+  // CatStudio: D é a régua, M o MIP e N o MinIP; mover passou para H e o
+  // conta-gotas da pintura para I
+  pan: 'h',
   zoom: 'z',
-  ruler: 'm',
+  ruler: 'd',
   paint: 'p',
   paintEraser: 'e',
-  paintEyedropper: 'd',
+  paintEyedropper: 'i',
   brushSizeModifier: 'ctrl',
   decreaseBrushSize: '[',
   increaseBrushSize: ']',
@@ -222,7 +229,12 @@ export const ACTION_TO_KEY = {
 
   decrementLabel: 'q',
   incrementLabel: 'w',
-  ...perSegmentShortcut((index) => String((index + 1) % 10)),
+  // CatStudio: 1 a 6 são as janelas; os segmentos ficaram em Alt+número
+  ...perSegmentShortcut((index) => `alt+${(index + 1) % 10}`),
+  ...perWindowShortcut((index) => String(index + 1)),
+  slabMip: 'm',
+  slabMinIp: 'n',
+  resetViews: 'x',
 
   // the main delete key reports Backspace on macOS
   deleteSelectedAnnotations: ['delete', 'backspace'],

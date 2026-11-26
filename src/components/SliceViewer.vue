@@ -23,7 +23,7 @@
           activator="parent"
           transition="slide-x-transition"
         >
-          Reset Camera
+          Recentralizar
         </v-tooltip>
       </v-btn>
       <slice-slider
@@ -78,7 +78,14 @@
             :view-id="viewId"
             :image-id="currentImageID"
             :axis="viewAxis"
+            :hidden="slabActive"
           ></vtk-base-slice-representation>
+          <slab-slice
+            v-if="slabActive"
+            :view-id="viewId"
+            :image-id="currentImageID"
+            :axis="viewAxis"
+          ></slab-slice>
           <vtk-segmentation-slice-representation
             v-for="maskId in segmentMaskIds"
             :key="`seg-${maskId}`"
@@ -139,6 +146,7 @@
           ></scalar-probe>
           <slot></slot>
         </vtk-slice-view>
+        <slab-control v-if="slabActive" :view-id="viewId" />
       </div>
     </div>
   </div>
@@ -185,6 +193,9 @@ import { onVTKEvent } from '@/src/composables/onVTKEvent';
 import { useViewStore } from '@/src/store/views';
 import { ViewInfo2D } from '@/src/types/views';
 import { get2DViewingVectors } from '@/src/utils/getViewingVectors';
+import SlabSlice from '@/src/catstudio/components/SlabSlice.vue';
+import SlabControl from '@/src/catstudio/components/SlabControl.vue';
+import { slabFor } from '@/src/catstudio/slab';
 
 type Props = {
   viewId: string;
@@ -215,6 +226,13 @@ const viewDirection = computed(() => viewingVectors.value.viewDirection);
 const viewUp = computed(() => viewingVectors.value.viewUp);
 
 const hover = ref(false);
+
+// CatStudio: MIP/MinIP em espessura só faz sentido em volume de um canal
+const slabActive = computed(() => {
+  if (slabFor(viewId.value).mode === 'off') return false;
+  const scalars = currentImageData.value?.getPointData().getScalars();
+  return scalars?.getNumberOfComponents() === 1;
+});
 
 function resetCamera() {
   vtkView.value?.resetCamera();
