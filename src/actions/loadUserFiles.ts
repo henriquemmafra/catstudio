@@ -1,4 +1,5 @@
 import { scoreOf } from '@/src/catstudio/triage';
+import { filterExamFiles } from '@/src/catstudio/folderFilter';
 import { UrlParams } from '@vueuse/core';
 import {
   fileToDataSource,
@@ -438,7 +439,20 @@ export function openFileDialog() {
 }
 
 export async function loadFiles(files: File[]) {
-  const dataSources = files.map(fileToDataSource);
+  // CatStudio: numa pasta de exame, só os DICOM entram (ver folderFilter)
+  const { kept, skipped } = await filterExamFiles(files);
+  if (skipped.length) {
+    const shown = skipped.slice(0, 15).map((file) => `- ${file.name}`);
+    if (skipped.length > shown.length)
+      shown.push(`… e mais ${skipped.length - shown.length}`);
+    useMessageStore().addInfo(
+      skipped.length === 1
+        ? '1 arquivo que não é DICOM foi ignorado'
+        : `${skipped.length} arquivos que não são DICOM foram ignorados`,
+      shown.join('\n')
+    );
+  }
+  const dataSources = kept.map(fileToDataSource);
   return loadDataSources(dataSources);
 }
 

@@ -59,6 +59,9 @@ export async function getFileMimeFromMagic(file: File): Promise<Maybe<string>> {
       }
       resolve(null);
     };
+    // sem isto, um arquivo ilegível deixava a importação esperando para sempre
+    reader.onerror = () => resolve(null);
+    reader.onabort = () => resolve(null);
     reader.readAsArrayBuffer(head);
   });
 }
