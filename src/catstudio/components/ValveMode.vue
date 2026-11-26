@@ -451,20 +451,32 @@ function advance(now: number) {
   }
 }
 
+/** Último quadro desenhado: parado, o mesmo quadro não é refeito. */
+let lastMesh: ValveMesh | null = null;
+let lastView = '';
+
 function drawView(now: number) {
   raf = requestAnimationFrame(drawView);
   const cv = viewCanvas.value;
   const pts = frames.value[phase.value];
-  if (!cv || !pts) return;
+  if (!cv || !pts) {
+    lastMesh = null;
+    return;
+  }
   advance(now);
-  const rgba = renderer.draw(pts, {
+  const next = {
     spin: view.spin,
     tilt: view.tilt,
     zoom: (SIZE * 0.4) / (radius.value + 6),
     style: style.value,
     flip: flip.value,
     clip: cut.value > 0 ? CUT_REACH - cut.value : undefined,
-  });
+  };
+  const key = JSON.stringify(next);
+  if (pts === lastMesh && key === lastView) return;
+  lastMesh = pts;
+  lastView = key;
+  const rgba = renderer.draw(pts, next);
   cv.getContext('2d')!.putImageData(new ImageData(rgba, SIZE, SIZE), 0, 0);
 }
 
