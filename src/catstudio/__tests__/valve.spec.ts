@@ -225,6 +225,58 @@ function thinLeaflet(): Volume {
   return { data, dims: [N, N, NZ], spacing: [0.4, 0.4, 0.4] };
 }
 
+describe('CatStudio — região esférica e giro livre', () => {
+  it('a esfera corta a superfície pelo raio em torno do centro', () => {
+    const data = new Int16Array(80 * 80 * 80);
+    for (let k = 0; k < 80; k++)
+      for (let j = 0; j < 80; j++)
+        for (let i = 0; i < 80; i++)
+          data[i + 80 * (j + 80 * k)] =
+            Math.hypot((i - 40) * 0.5, (j - 40) * 0.5) < 6 ? 400 : 50;
+    const tube: Volume = { data, dims: [80, 80, 80], spacing: [0.5, 0.5, 0.5] };
+    const ring = planeFromPoints([14, 17, 20], [26, 17, 20], [20, 26, 20])!;
+    const mesh = extractSurface(sampleCube(tube, ring), {
+      radius: 10,
+      from: -2,
+      to: 2,
+      shape: 'sphere',
+      ...defaultThresholds(400),
+    });
+    let far = 0;
+    let tall = 0;
+    for (let v = 0; v < mesh.kinds.length; v++) {
+      const [x, y, z] = mesh.positions.subarray(3 * v, 3 * v + 3);
+      far = Math.max(far, Math.hypot(x, y, z));
+      tall = Math.max(tall, Math.abs(z));
+    }
+    // vai além da faixa from–to (que a esfera ignora) e não passa do raio
+    expect(tall).toBeGreaterThan(6);
+    expect(far).toBeLessThan(10.8);
+  });
+
+  it('o giro é uma rotação de verdade, em qualquer direção', async () => {
+    const { viewMatrix, turnOnScreen, turnOnAxis } =
+      await import('../valveRender');
+    let m = viewMatrix(0.6, 0.95);
+    for (let step = 0; step < 50; step++) {
+      m = turnOnScreen(m, 0.37, -0.81);
+      m = turnOnAxis(m, 0.2);
+    }
+    const det =
+      m[0] * (m[4] * m[8] - m[5] * m[7]) -
+      m[1] * (m[3] * m[8] - m[5] * m[6]) +
+      m[2] * (m[3] * m[7] - m[4] * m[6]);
+    // determinante +1: não espelha a anatomia (o antigo "outro lado" espelhava)
+    expect(det).toBeCloseTo(1, 5);
+    expect(m[0] * m[3] + m[1] * m[4] + m[2] * m[5]).toBeCloseTo(0, 5);
+    // meia-volta em torno do eixo vertical da tela inverte x e a profundidade
+    const back = turnOnScreen(viewMatrix(0, 0), Math.PI, 0);
+    expect(back[0]).toBeCloseTo(-1);
+    expect(back[8]).toBeCloseTo(-1);
+    expect(back[4]).toBeCloseTo(1);
+  });
+});
+
 describe('CatStudio — limpar a poeira', () => {
   it('pedaço solto pequeno sai; o cálcio e a parede ficam', () => {
     // tubo de sangue com uma bolinha de tecido solta na luz (raio 1,5 mm)

@@ -193,6 +193,11 @@ export interface ExtractOptions {
    * saem da malha. Padrão 12 mm².
    */
   minFragment?: number;
+  /**
+   * Forma da região: cilindro (raio × faixa from–to ao longo do eixo, o
+   * padrão) ou esfera de mesmo raio em torno do centro (ignora from/to).
+   */
+  shape?: 'cylinder' | 'sphere';
 }
 
 export function defaultThresholds(blood: number) {
@@ -455,14 +460,17 @@ function dropFragments(mesh: ValveMesh, minArea: number): ValveMesh {
 export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
   const { size, depth, step } = cube;
   const T = opt.threshold;
+  const sphere = opt.shape === 'sphere';
+  const from = sphere ? -opt.radius : opt.from;
+  const to = sphere ? opt.radius : opt.to;
   const half = (size * step) / 2;
   const halfDepth = (depth * step) / 2;
   const PAD = 6;
   const clampTo = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
   const i0 = clampTo(Math.floor((half - opt.radius) / step) - PAD, size);
   const i1 = clampTo(Math.ceil((half + opt.radius) / step) + PAD, size);
-  const z0 = clampTo(Math.floor((opt.from + halfDepth) / step) - PAD, depth);
-  const z1 = clampTo(Math.ceil((opt.to + halfDepth) / step) + PAD, depth);
+  const z0 = clampTo(Math.floor((from + halfDepth) / step) - PAD, depth);
+  const z1 = clampTo(Math.ceil((to + halfDepth) / step) + PAD, depth);
   const g: Grid = { nx: i1 - i0, ny: i1 - i0, nz: z1 - z0 };
   const empty: ValveMesh = {
     positions: new Float32Array(0),
@@ -474,8 +482,8 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
   const raw = new Float32Array(g.nx * g.ny * g.nz);
   for (let k = 0; k < g.nz; k++)
     for (let j = 0; j < g.ny; j++) {
-      const from = i0 + size * (j + i0 + size * (k + z0));
-      raw.set(cube.data.subarray(from, from + g.nx), g.nx * (j + g.ny * k));
+      const row = i0 + size * (j + i0 + size * (k + z0));
+      raw.set(cube.data.subarray(row, row + g.nx), g.nx * (j + g.ny * k));
     }
 
   const field = enhanceLeaflets(foldedField(raw, opt.calcium), g, T, step);
@@ -483,8 +491,8 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
   const { nx } = g;
   const sxy = g.nx * g.ny;
   // faixa pedida ao longo do eixo, em voxels do recorte
-  const k0 = Math.max(1, Math.floor((opt.from + halfDepth) / step) - z0);
-  const k1 = Math.min(g.nz - 2, Math.ceil((opt.to + halfDepth) / step) - z0);
+  const k0 = Math.max(1, Math.floor((from + halfDepth) / step) - z0);
+  const k1 = Math.min(g.nz - 2, Math.ceil((to + halfDepth) / step) - z0);
   const vertexOf = new Int32Array(raw.length).fill(-1);
   const pos: number[] = [];
   const nor: number[] = [];
@@ -506,7 +514,8 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
         if (bits === 0 || bits === 255) continue;
         const x = (i + i0 + 1) * step - half;
         const y = (j + i0 + 1) * step - half;
-        if (x * x + y * y > opt.radius * opt.radius) continue;
+        const zc = sphere ? (k + z0 + 1) * step - halfDepth : 0;
+        if (x * x + y * y + zc * zc > opt.radius * opt.radius) continue;
         let px = 0;
         let py = 0;
         let pz = 0;

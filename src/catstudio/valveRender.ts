@@ -23,11 +23,23 @@ export interface ValveView {
   /** Olhar pelo outro lado do anel. */
   flip: boolean;
   /**
+   * Giro livre: matriz 3×3 (por linhas) do sistema do anel para a tela
+   * (x para a direita, y para baixo, z para o observador). Quando presente,
+   * substitui spin, tilt e flip.
+   */
+  rot?: ArrayLike<number>;
+  /** Rascunho rápido (sem sombras nem oclusão), para girar em máquina lenta. */
+  fast?: boolean;
+  /**
    * Corte: tudo o que está mais perto do observador do que esta profundidade
    * (mm a partir do centro do anel) não é desenhado. Ausente = sem corte.
    */
   clip?: number;
 }
+
+// luz principal (de cima, à esquerda, vinda do observador) e de preenchimento
+const KEY = [-0.36, -0.46, 0.81];
+const FILL = [0.55, 0.25, 0.8];
 
 // cor por tipo (índice = KIND × 4): holograma em 0–1 com opacidade
 const HOLO_COLOR = new Float32Array(12);
@@ -45,6 +57,21 @@ GLOSS[KIND.wall] = 1;
 GLOSS[KIND.leaflet] = 0.7;
 GLOSS[KIND.calcium] = 0.12;
 const KEY_COLOR = [1.0, 0.96, 0.9];
+// mapa de sombras: a cena vista da luz principal (projeção paralela)
+const SHADOW_SIZE = 512;
+/** Meia-largura coberta pelo mapa, em mm. */
+const SHADOW_EXTENT = 52;
+const SHADOW_SCALE = SHADOW_SIZE / (2 * SHADOW_EXTENT);
+// base da luz: LA e LB perpendiculares a KEY (calculadas uma vez)
+const LA = (() => {
+  const l = Math.hypot(KEY[2], KEY[0]);
+  return [KEY[2] / l, 0, -KEY[0] / l];
+})();
+const LB = [
+  KEY[1] * LA[2] - KEY[2] * LA[1],
+  KEY[2] * LA[0] - KEY[0] * LA[2],
+  KEY[0] * LA[1] - KEY[1] * LA[0],
+];
 const AMBIENT = [0.8, 0.9, 1.1];
 /** Luz que atravessa o tecido volta vermelha. */
 const SCATTER = [0.9, 0.22, 0.14];
@@ -80,9 +107,60 @@ function noise3(x: number, y: number, z: number): number {
   return mix(plane(0), plane(1), fz);
 }
 
-// luz principal (de cima, à esquerda, vinda do observador) e de preenchimento
-const KEY = [-0.36, -0.46, 0.81];
-const FILL = [0.55, 0.25, 0.8];
+/** Matriz da vista por giro em torno do eixo da valva e inclinação. */
+export function viewMatrix(spin: number, tilt: number, flip = false): number[] {
+  const cs = Math.cos(spin);
+  const sn = Math.sin(spin);
+  const ct = Math.cos(tilt);
+  const st = Math.sin(tilt);
+  const sign = flip ? -1 : 1;
+  return [
+    cs,
+    -sn,
+    0,
+    sn * ct,
+    cs * ct,
+    -st * sign,
+    sn * st,
+    cs * st,
+    ct * sign,
+  ];
+}
+
+/** Compõe a matriz com um giro em torno dos eixos da tela (arrastar). */
+export function turnOnScreen(
+  m: ArrayLike<number>,
+  right: number,
+  down: number
+) {
+  const ca = Math.cos(right);
+  const sa = Math.sin(right);
+  const cb = Math.cos(down);
+  const sb = Math.sin(down);
+  const out = new Array<number>(9);
+  for (let c = 0; c < 3; c++) {
+    // em torno de y da tela (arrastar para os lados)...
+    const x = m[c] * ca + m[6 + c] * sa;
+    const z = -m[c] * sa + m[6 + c] * ca;
+    // ...e depois em torno de x da tela (arrastar para cima e para baixo)
+    out[c] = x;
+    out[3 + c] = m[3 + c] * cb + z * sb;
+    out[6 + c] = -m[3 + c] * sb + z * cb;
+  }
+  return out;
+}
+
+/** Compõe a matriz com um giro em torno do eixo da valva (giro automático). */
+export function turnOnAxis(m: ArrayLike<number>, angle: number) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const out = Array.from(m);
+  for (let r = 0; r < 3; r++) {
+    out[3 * r] = m[3 * r] * c + m[3 * r + 1] * s;
+    out[3 * r + 1] = -m[3 * r] * s + m[3 * r + 1] * c;
+  }
+  return out;
+}
 
 export function createValveRenderer(w: number, h: number) {
   const rgba = new Uint8ClampedArray(w * h * 4);
@@ -91,6 +169,8 @@ export function createValveRenderer(w: number, h: number) {
   const nbuf = new Float32Array(w * h * 3);
   const cbuf = new Float32Array(w * h * 4);
   const materials = new WeakMap<ValveMesh, Float32Array>();
+  const shadow = new Float32Array(SHADOW_SIZE * SHADOW_SIZE);
+  let lightPos = new Float32Array(0); // x, y (texels) e distância à luz, por vértice
   const aoStep = new Int32Array(16);
   const aoMm = new Float32Array(16);
   let screen = new Float32Array(0); // x, y, profundidade por vértice
@@ -116,27 +196,23 @@ export function createValveRenderer(w: number, h: number) {
       screen = new Float32Array(count * 3);
       normal = new Float32Array(count * 3);
     }
-    const cs = Math.cos(view.spin);
-    const sn = Math.sin(view.spin);
-    const ct = Math.cos(view.tilt);
-    const st = Math.sin(view.tilt);
-    const sign = view.flip ? -1 : 1;
+    const m = view.rot ?? viewMatrix(view.spin, view.tilt, view.flip);
     const p = mesh.positions;
     const n = mesh.normals;
     for (let v = 0; v < count; v++) {
       const o = 3 * v;
-      let xr = p[o] * cs - p[o + 1] * sn;
-      let yr = p[o] * sn + p[o + 1] * cs;
-      let zr = p[o + 2] * sign;
-      screen[o] = w / 2 + xr * view.zoom;
-      screen[o + 1] = h / 2 + (yr * ct - zr * st) * view.zoom;
-      screen[o + 2] = yr * st + zr * ct;
-      xr = n[o] * cs - n[o + 1] * sn;
-      yr = n[o] * sn + n[o + 1] * cs;
-      zr = n[o + 2] * sign;
-      normal[o] = xr;
-      normal[o + 1] = yr * ct - zr * st;
-      normal[o + 2] = yr * st + zr * ct;
+      const x = p[o];
+      const y = p[o + 1];
+      const z = p[o + 2];
+      screen[o] = w / 2 + (m[0] * x + m[1] * y + m[2] * z) * view.zoom;
+      screen[o + 1] = h / 2 + (m[3] * x + m[4] * y + m[5] * z) * view.zoom;
+      screen[o + 2] = m[6] * x + m[7] * y + m[8] * z;
+      const nx = n[o];
+      const ny = n[o + 1];
+      const nz = n[o + 2];
+      normal[o] = m[0] * nx + m[1] * ny + m[2] * nz;
+      normal[o + 1] = m[3] * nx + m[4] * ny + m[5] * nz;
+      normal[o + 2] = m[6] * nx + m[7] * ny + m[8] * nz;
     }
   }
 
@@ -183,6 +259,68 @@ export function createValveRenderer(w: number, h: number) {
           const wc = 1 - wa - wb;
           if (wa < -slack || wb < -slack || wc < -slack) continue;
           pixel(x + w * y, a, b, c, wa, wb, wc);
+        }
+    }
+  }
+
+  /**
+   * Mapa de sombras: profundidade da cena vista da luz principal. Não entram
+   * os triângulos que a vista também não desenha (a parede cortada do lado do
+   * observador e o que o corte tirou) — senão fariam sombra sem aparecer.
+   */
+  function castShadows(mesh: ValveMesh, view: ValveView) {
+    const count = mesh.kinds.length;
+    if (lightPos.length < count * 3) lightPos = new Float32Array(count * 3);
+    for (let v = 0; v < count; v++) {
+      const x = (screen[3 * v] - w / 2) / view.zoom;
+      const y = (screen[3 * v + 1] - h / 2) / view.zoom;
+      const z = screen[3 * v + 2];
+      lightPos[3 * v] =
+        SHADOW_SIZE / 2 + (x * LA[0] + y * LA[1] + z * LA[2]) * SHADOW_SCALE;
+      lightPos[3 * v + 1] =
+        SHADOW_SIZE / 2 + (x * LB[0] + y * LB[1] + z * LB[2]) * SHADOW_SCALE;
+      lightPos[3 * v + 2] = x * KEY[0] + y * KEY[1] + z * KEY[2];
+    }
+    shadow.fill(-Infinity);
+    const idx = mesh.indices;
+    const k = mesh.kinds;
+    const S = SHADOW_SIZE;
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = idx[t];
+      const b = idx[t + 1];
+      const c = idx[t + 2];
+      const za = screen[3 * a + 2];
+      const zb = screen[3 * b + 2];
+      const zc = screen[3 * c + 2];
+      if (za > clip && zb > clip && zc > clip) continue;
+      const wall =
+        k[a] === KIND.wall && k[b] === KIND.wall && k[c] === KIND.wall;
+      const facing = normal[3 * a + 2] + normal[3 * b + 2] + normal[3 * c + 2];
+      if (wall && facing < -0.24) continue;
+      const ax = lightPos[3 * a];
+      const ay = lightPos[3 * a + 1];
+      const bx = lightPos[3 * b];
+      const by = lightPos[3 * b + 1];
+      const cx = lightPos[3 * c];
+      const cy = lightPos[3 * c + 1];
+      const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+      if (Math.abs(area) < 1e-6) continue;
+      const x0 = Math.max(0, Math.ceil(Math.min(ax, bx, cx) - 0.5));
+      const x1 = Math.min(S - 1, Math.floor(Math.max(ax, bx, cx) + 0.5));
+      const y0 = Math.max(0, Math.ceil(Math.min(ay, by, cy) - 0.5));
+      const y1 = Math.min(S - 1, Math.floor(Math.max(ay, by, cy) + 0.5));
+      const inv = 1 / area;
+      const da = lightPos[3 * a + 2];
+      const db = lightPos[3 * b + 2];
+      const dc = lightPos[3 * c + 2];
+      for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++) {
+          const wa = ((bx - x) * (cy - y) - (by - y) * (cx - x)) * inv;
+          const wb = ((cx - x) * (ay - y) - (cy - y) * (ax - x)) * inv;
+          const wc = 1 - wa - wb;
+          if (wa < -0.02 || wb < -0.02 || wc < -0.02) continue;
+          const d = wa * da + wb * db + wc * dc;
+          if (d > shadow[x + S * y]) shadow[x + S * y] = d;
         }
     }
   }
@@ -264,6 +402,8 @@ export function createValveRenderer(w: number, h: number) {
           wa * mat[4 * a + ch] + wb * mat[4 * b + ch] + wc * mat[4 * c + ch];
     });
 
+    const full = view.fast !== true;
+    if (full) castShadows(mesh, view);
     // oclusão ambiente em dois raios (~1,2 mm e ~3,5 mm na tela)
     const radii = [
       Math.max(2, Math.round(1.2 * view.zoom)),
@@ -284,7 +424,13 @@ export function createValveRenderer(w: number, h: number) {
         if (z === -Infinity) continue;
         // quanto os vizinhos estão à frente deste ponto (reentrância)
         let blocked = 0;
-        if (x >= margin && y >= margin && x < w - margin && y < h - margin)
+        if (
+          full &&
+          x >= margin &&
+          y >= margin &&
+          x < w - margin &&
+          y < h - margin
+        )
           for (let s = 0; s < 16; s++) {
             const dz = zbuf[i + aoStep[s]] - z;
             const mm = aoMm[s];
@@ -296,7 +442,38 @@ export function createValveRenderer(w: number, h: number) {
         const nz = nbuf[3 * i + 2];
         const keyDot = nx * KEY[0] + ny * KEY[1] + nz * KEY[2];
         // difusa envolvente: a luz "dobra" um pouco além do terminador
-        const key = keyDot > -0.3 ? (keyDot + 0.3) / 1.3 : 0;
+        // sombra projetada: há algo entre este ponto e a luz? (25 amostras
+        // em volta, para a borda da sombra sair suave)
+        let lit = 1;
+        if (full && keyDot > -0.3) {
+          const px = (x - w / 2) / view.zoom;
+          const py = (y - h / 2) / view.zoom;
+          const lu =
+            SHADOW_SIZE / 2 +
+            (px * LA[0] + py * LA[1] + z * LA[2]) * SHADOW_SCALE;
+          const lv =
+            SHADOW_SIZE / 2 +
+            (px * LB[0] + py * LB[1] + z * LB[2]) * SHADOW_SCALE;
+          const ld = px * KEY[0] + py * KEY[1] + z * KEY[2];
+          // folga maior onde a luz é rasante (evita sombra da própria face)
+          const bias = 0.5 + 1.2 * (1 - Math.max(0, keyDot));
+          const iu = Math.round(lu);
+          const iv = Math.round(lv);
+          if (
+            iu > 2 &&
+            iv > 2 &&
+            iu < SHADOW_SIZE - 3 &&
+            iv < SHADOW_SIZE - 3
+          ) {
+            let dark = 0;
+            for (let dv = -2; dv <= 2; dv++)
+              for (let du = -2; du <= 2; du++)
+                if (shadow[iu + du + SHADOW_SIZE * (iv + dv)] > ld + bias)
+                  dark += 1;
+            lit = 1 - dark / 25;
+          }
+        }
+        const key = keyDot > -0.3 ? ((keyDot + 0.3) / 1.3) * lit : 0;
         const fillDot = nx * FILL[0] + ny * FILL[1] + nz * FILL[2];
         const fill = fillDot > 0 ? fillDot : 0;
         // onde a luz principal não chega direto, o tecido fica avermelhado
@@ -313,12 +490,13 @@ export function createValveRenderer(w: number, h: number) {
         }
         const side = 1 - nz;
         const fog = Math.max(0.5, Math.min(1, 0.84 + 0.011 * z));
-        const amb = 0.13 * (0.75 - 0.25 * ny) * ao;
-        const diff = (0.7 * key * (0.35 + 0.65 * ao) + 0.14 * fill * ao) * fog;
-        const spec = (sheen * ao + 0.04 * side * side * side) * gloss * fog;
+        const amb = 0.12 * (0.75 - 0.25 * ny) * ao;
+        const diff = (0.85 * key * (0.35 + 0.65 * ao) + 0.12 * fill * ao) * fog;
+        const spec =
+          (sheen * ao * lit + 0.04 * side * side * side) * gloss * fog;
         for (let ch = 0; ch < 3; ch++) {
           const albedo = cbuf[4 * i + ch];
-          const lit =
+          const out =
             albedo *
               (amb * AMBIENT[ch] +
                 diff * KEY_COLOR[ch] +
@@ -326,7 +504,7 @@ export function createValveRenderer(w: number, h: number) {
             spec;
           // curva de filme (ACES aproximada) e gama
           const t =
-            (lit * (2.51 * lit + 0.03)) / (lit * (2.43 * lit + 0.59) + 0.14);
+            (out * (2.51 * out + 0.03)) / (out * (2.43 * out + 0.59) + 0.14);
           rgba[4 * i + ch] = GAMMA[t >= 1 ? 1023 : (t * 1023) | 0];
         }
       }

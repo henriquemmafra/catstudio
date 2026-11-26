@@ -27,10 +27,16 @@ import {
   type Vec3,
   type Volume,
 } from '@/src/catstudio/valve';
-import { createValveRenderer } from '@/src/catstudio/valveRender';
+import {
+  createValveRenderer,
+  turnOnAxis,
+  turnOnScreen,
+  viewMatrix,
+} from '@/src/catstudio/valveRender';
 import {
   detectAorticValve,
   orientPlane,
+  planeAt,
   tiltPlane,
 } from '@/src/catstudio/valveDetect';
 import { pinImage, unpinImage } from '@/src/catstudio/lazy';
@@ -48,7 +54,6 @@ const slice = ref(0);
 const zoom = reactive({ k: 1, cx: 0.5, cy: 0.5 });
 const style = ref<'holo' | 'solid'>('holo');
 const autoSpin = ref(true);
-const flip = ref(false);
 const playing = ref(true);
 const radius = ref(VALVES.aortica.radius);
 const threshold = ref(250);
@@ -74,7 +79,13 @@ const CUT_REACH = 40;
 /** Pedaços soltos menores que isto (mm² de superfície) são retirados. */
 const dust = ref(60);
 const phase = ref(0);
-const view = reactive({ spin: 0.6, tilt: 0.95 });
+/** Giro livre: matriz do sistema do anel para a tela. */
+const START_VIEW = viewMatrix(0.6, 0.95);
+let rot = START_VIEW;
+/** Forma da região reconstruída em volta do centro. */
+const shape = ref<'cylinder' | 'sphere'>('cylinder');
+/** Marcação à mão: um clique no centro, ou três pontos do anel. */
+const pickMode = ref<'center' | 'three'>('center');
 
 const pickCanvas = ref<HTMLCanvasElement | null>(null);
 const viewCanvas = ref<HTMLCanvasElement | null>(null);
@@ -236,6 +247,22 @@ function onPickMove(e: PointerEvent) {
 
 function addPoint(e: PointerEvent, vol: Volume) {
   const { i, j } = toSlicePixel(e, vol);
+  if (pickMode.value === 'center') {
+    // um clique = centro; o plano começa axial e é ajustado nos controles
+    const center: Vec3 = [
+      i * vol.spacing[0],
+      j * vol.spacing[1],
+      slice.value * vol.spacing[2],
+    ];
+    ring.value = orientPlane(
+      planeAt(center, [0, 0, 1]),
+      valve.value,
+      direction.value
+    );
+    ringAuto.value = false;
+    buildCurrent();
+    return;
+  }
   points.value = [
     ...points.value,
     [i * vol.spacing[0], j * vol.spacing[1], slice.value * vol.spacing[2]],
@@ -254,6 +281,11 @@ function addPoint(e: PointerEvent, vol: Volume) {
   ring.value = orientPlane(marked, valve.value, direction.value);
   ringAuto.value = false;
   buildCurrent();
+}
+
+function togglePickMode() {
+  pickMode.value = pickMode.value === 'center' ? 'three' : 'center';
+  points.value = [];
 }
 
 function onPickUp(e: PointerEvent) {
@@ -359,6 +391,7 @@ function extractAll() {
       threshold: threshold.value,
       calcium,
       minFragment: dust.value,
+      shape: shape.value,
     })
   );
   const n = frames.value[phase.value]?.indices.length ?? 0;
@@ -419,7 +452,7 @@ async function loadAllPhases() {
   extractAll();
 }
 
-watch([radius, threshold, span, dust], () => {
+watch([radius, threshold, span, dust, shape], () => {
   if (cubes.value.length) extractAll();
 });
 watch(valve, (v) => {
@@ -443,7 +476,7 @@ let phaseClock = 0;
 function advance(now: number) {
   const dt = Math.min(100, now - lastTick);
   lastTick = now;
-  if (autoSpin.value && !drag) view.spin += dt * 0.0006;
+  if (autoSpin.value && !drag) rot = turnOnAxis(rot, dt * 0.0006);
   phaseClock += dt;
   if (playing.value && frames.value.length > 1 && phaseClock > 110) {
     phaseClock = 0;
@@ -464,21 +497,32 @@ function drawView(now: number) {
     return;
   }
   advance(now);
+  // em máquina lenta, enquanto gira sai o rascunho (sem sombras); parado,
+  // gravando ou com folga de tempo, o quadro completo
+  const moving = autoSpin.value || !!drag || frames.value.length > 1;
   const next = {
-    spin: view.spin,
-    tilt: view.tilt,
+    spin: 0,
+    tilt: 0,
+    flip: false,
+    rot,
     zoom: (SIZE * 0.4) / (radius.value + 6),
     style: style.value,
-    flip: flip.value,
     clip: cut.value > 0 ? CUT_REACH - cut.value : undefined,
+    fast: moving && !recording.value && fullCost > 70,
   };
   const key = JSON.stringify(next);
   if (pts === lastMesh && key === lastView) return;
   lastMesh = pts;
   lastView = key;
+  const started = performance.now();
   const rgba = renderer.draw(pts, next);
+  if (!next.fast && next.style === 'solid')
+    fullCost = 0.7 * fullCost + 0.3 * (performance.now() - started);
   cv.getContext('2d')!.putImageData(new ImageData(rgba, SIZE, SIZE), 0, 0);
 }
+
+/** Custo médio (ms) do quadro completo no modo sólido, nesta máquina. */
+let fullCost = 0;
 
 let drag: { x: number; y: number } | null = null;
 function onViewDown(e: PointerEvent) {
@@ -487,12 +531,19 @@ function onViewDown(e: PointerEvent) {
 }
 function onViewMove(e: PointerEvent) {
   if (!drag) return;
-  view.spin += (e.clientX - drag.x) * 0.01;
-  view.tilt = Math.max(
-    0,
-    Math.min(Math.PI, view.tilt - (e.clientY - drag.y) * 0.01)
+  // giro livre em torno dos eixos da tela, sem limite
+  rot = turnOnScreen(
+    rot,
+    (e.clientX - drag.x) * 0.01,
+    (e.clientY - drag.y) * 0.01
   );
   drag = { x: e.clientX, y: e.clientY };
+}
+function turnAround() {
+  rot = turnOnScreen(rot, Math.PI, 0);
+}
+function resetView() {
+  rot = START_VIEW;
 }
 function onViewUp() {
   drag = null;
@@ -564,6 +615,8 @@ const hint = computed(() => {
   if (ring.value && ringAuto.value)
     return `Valva aórtica localizada automaticamente. ${adjust}`;
   if (ring.value) return `Anel marcado. ${adjust}`;
+  if (pickMode.value === 'center')
+    return `Vá ao corte em que a valva ${VALVES[valve.value].name.toLowerCase()} aparece e clique no centro dela.`;
   const n = points.value.length;
   return `${VALVES[valve.value].hint} Ponto ${Math.min(n + 1, 3)} de 3.`;
 });
@@ -644,7 +697,18 @@ const canLoadPhases = computed(
               class="text-none"
               data-testid="valve-reset"
               @click="resetPoints"
-              >{{ ring ? 'Marcar por 3 pontos' : 'Refazer pontos' }}</v-btn
+              >{{ ring ? 'Marcar à mão' : 'Recomeçar' }}</v-btn
+            >
+            <v-btn
+              v-if="!ring"
+              size="small"
+              variant="text"
+              class="text-none"
+              data-testid="valve-pick-mode"
+              @click="togglePickMode"
+              >{{
+                pickMode === 'center' ? 'Usar 3 pontos' : 'Usar o centro'
+              }}</v-btn
             >
             <v-btn
               v-if="valve === 'aortica' && !ringAuto"
@@ -660,7 +724,11 @@ const canLoadPhases = computed(
           <div class="text-caption text-medium-emphasis mt-1">
             Roda do mouse: cortes · Ctrl + roda: zoom ·
             {{
-              ring ? 'arraste o círculo: move o anel' : 'clique: marca o ponto'
+              ring
+                ? 'arraste o círculo: move o centro'
+                : pickMode === 'center'
+                  ? 'clique: marca o centro'
+                  : 'clique: marca o ponto'
             }}
           </div>
           <div v-if="ring" class="mt-2" data-testid="valve-lean">
@@ -732,8 +800,15 @@ const canLoadPhases = computed(
               size="small"
               variant="text"
               class="text-none"
-              @click="flip = !flip"
+              @click="turnAround"
               >Ver do outro lado</v-btn
+            >
+            <v-btn
+              size="small"
+              variant="text"
+              class="text-none"
+              @click="resetView"
+              >Vista inicial</v-btn
             >
             <v-btn
               v-if="frames.length > 1"
@@ -777,7 +852,32 @@ const canLoadPhases = computed(
                 aria-label="Raio"
               />
             </div>
-            <div class="d-flex align-center ga-3">
+            <div class="d-flex align-center ga-3 mb-1">
+              <span class="text-caption valve-label">Região</span>
+              <v-btn-toggle
+                v-model="shape"
+                mandatory
+                density="compact"
+                variant="outlined"
+                divided
+              >
+                <v-btn
+                  value="cylinder"
+                  size="small"
+                  class="text-none"
+                  data-testid="valve-cylinder"
+                  >Cilindro</v-btn
+                >
+                <v-btn
+                  value="sphere"
+                  size="small"
+                  class="text-none"
+                  data-testid="valve-sphere"
+                  >Esfera</v-btn
+                >
+              </v-btn-toggle>
+            </div>
+            <div v-if="shape === 'cylinder'" class="d-flex align-center ga-3">
               <span class="text-caption valve-label"
                 >Altura {{ span[0] }} a {{ span[1] }} mm</span
               >
