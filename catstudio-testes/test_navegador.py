@@ -1212,3 +1212,46 @@ def test_cores_por_tecido_paleta_edicao_e_dois_botoes(session):
     page.get_by_test_id("palette-delete").click()
     assert page.get_by_role("button", name="Verde de teste").count() == 0
     assert not session.errors, session.errors
+
+
+def test_foto_final_no_processador(session, tmp_path):
+    """A foto final sai no dobro do tamanho da vista, mostra o mesmo exame
+    (mesmas regiões claras) e respeita a escultura."""
+    from PIL import Image
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    caixa = view.bounding_box()
+    tela = _gray_3d(page, view)
+
+    def foto(nome):
+        with page.expect_download(timeout=180000) as dl:
+            page.get_by_test_id("export-3d-menu").first.click()
+            page.get_by_test_id("export-3d-photo").click()
+        caminho = tmp_path / nome
+        dl.value.save_as(caminho)
+        return Image.open(caminho).convert("L")
+
+    imagem = foto("a.png")
+    assert abs(imagem.width - 2 * caixa["width"]) <= 4
+    assert abs(imagem.height - 2 * caixa["height"]) <= 4
+    assert "Foto pronta" in page.get_by_test_id("photo-badge").inner_text()
+    reduzida = np.asarray(imagem.resize((tela.shape[1], tela.shape[0]))).astype(float)
+    # as mesmas regiões aparecem nas duas (fora os textos da tela)
+    miolo = (slice(60, -60), slice(60, -60))
+    a, b = tela[miolo] > 40, reduzida[miolo] > 40
+    assert (a & b).sum() > 0.8 * a.sum() and (a & b).sum() > 0.8 * b.sum()
+
+    # tirar a esfera da direita com o clique também tira da foto
+    page.get_by_test_id("open-sculpt").click()
+    meio = tela.shape[1] // 2
+    ys, xs = np.nonzero(tela[60:-60, meio + 40:] > 120)
+    page.get_by_test_id("sculpt-pick-remove").click()
+    page.mouse.click(caixa["x"] + meio + 40 + float(np.median(xs)), caixa["y"] + 60 + float(np.median(ys)))
+    page.wait_for_timeout(2000)
+    page.get_by_test_id("sculpt-close").click()
+    sem_esfera = np.asarray(foto("b.png").resize((tela.shape[1], tela.shape[0]))).astype(float)
+    lado = lambda im: int((im[60:-60, meio + 40:] > 40).sum())
+    assert lado(reduzida) > 200 and lado(sem_esfera) < 0.1 * lado(reduzida)
+    assert not session.errors, session.errors

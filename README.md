@@ -126,6 +126,28 @@ vistas em fantoma: os pontos provavelmente pedem ajuste no exame real.
   e volta ao normal. A trava do 3D continua valendo: em placa fraca o quadro
   grande pode sair com resolução interna reduzida em vez de travar.
 
+### Foto final (textura em qualidade máxima)
+
+O 3D na tela é limitado pela placa de vídeo: nos modos Leve e Equilibrado ele
+usa o volume reduzido, a trava baixa a resolução quando a placa não aguenta e
+o Leve não tem sombra. Daí a textura granulada e borrada.
+
+**Exportar → Foto final** refaz a imagem no processador, raio por raio, no
+volume original em resolução total, com as mesmas cores, cortes, caixa girada,
+escultura e osso da tela, e acrescenta brilho, luz de preenchimento e sombra
+projetada. Como não usa a placa de vídeo, não trava nem derruba as vistas.
+
+- **Foto final**: o dobro do tamanho da vista. Num exame de 512 × 512 × 300,
+  uns 5 s aqui; num computador mais antigo, conte 15–30 s.
+- **Foto final 4×**: até 4096 px no maior lado, para pôster; alguns minutos.
+- O andamento aparece embaixo da vista, com "Cancelar". A página continua
+  usável enquanto isso.
+
+A luz é a do preset de iluminação escolhido; no "Padrão", vem de cima e um
+pouco da esquerda, para a sombra aparecer. A foto ignora a "opacidade por
+gradiente" do modo clássico do VolView: ela mostra exatamente a curva (ou a
+paleta) escolhida.
+
 ### Tela inicial e vistas pretas
 
 - A casinha no alto da barra de ferramentas fecha o exame e volta à tela
@@ -283,11 +305,11 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   passam; 1 falha só porque baixa um arquivo de data.kitware.com, sem
   acesso à internet no ambiente de teste).
 - **Esculpir o 3D, osso, luz, vistas pretas e tela inicial**: 51 testes
-  unitários, mais 9 das paletas por tecido (borracha; caixa de corte girada; tirar mesa com parede torácica fina, mesa encostada e traqueia
+  unitários, mais 9 das paletas por tecido e 12 da foto final (borracha; caixa de corte girada; tirar mesa com parede torácica fina, mesa encostada e traqueia
   aberta no primeiro corte; janela do 3D; laço, estrutura ligada, fragmentos, clique com caixa de corte,
   crescer por camadas, detecção e correção de osso, volume de dois
   componentes, desfazer, presets de luz, limite da exportação, recuperação do
-  contexto de vídeo) e 8 testes no navegador (cores por tecido; girar a caixa de corte e borracha; dois botões e tirar mesa; laço, clique, giro e desfazer;
+  contexto de vídeo) e 9 testes no navegador (foto final; cores por tecido; girar a caixa de corte e borracha; dois botões e tirar mesa; laço, clique, giro e desfazer;
   osso translúcido e escondido e crescer segurando; presets de luz, fundo e
   exportação 2×; vistas que voltam depois da perda do contexto WebGL; botão
   da tela inicial).

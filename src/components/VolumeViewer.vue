@@ -79,6 +79,19 @@
               </template>
               <v-list density="compact">
                 <v-list-item
+                  title="Foto final (qualidade máxima)"
+                  subtitle="Volume inteiro, sombra e brilho; feita no processador, sem travar a placa"
+                  data-testid="export-3d-photo"
+                  @click="startPhoto(2)"
+                />
+                <v-list-item
+                  title="Foto final 4× (pôster)"
+                  subtitle="Até 4096 px; pode levar alguns minutos"
+                  data-testid="export-3d-photo-4x"
+                  @click="startPhoto(4)"
+                />
+                <v-divider />
+                <v-list-item
                   v-for="option in EXPORT_OPTIONS"
                   :key="option.scale"
                   :title="option.title"
@@ -121,6 +134,9 @@
             }}{{ windowDrag.level }} · opacidade
             {{ windowDrag.opacity >= 0 ? '+' : '' }}{{ windowDrag.opacity }}%
           </div>
+        </template>
+        <template #bottom-center>
+          <photo-badge :view-id="viewId" />
         </template>
         <template #top-right>
           <div class="annotation-cell">
@@ -181,6 +197,9 @@ import SculptPanel from '@/src/catstudio/components/SculptPanel.vue';
 import CropRotate from '@/src/catstudio/components/CropRotate.vue';
 import { useWindowDrag } from '@/src/catstudio/useWindowDrag';
 import { displayPresetName } from '@/src/catstudio/paletteStore';
+import PhotoBadge from '@/src/catstudio/components/PhotoBadge.vue';
+import { takePhoto } from '@/src/catstudio/photo/run';
+import { useImageCacheStore } from '@/src/store/image-cache';
 
 interface Props {
   viewId: string;
@@ -234,6 +253,16 @@ async function settled() {
   for (let waited = 0; waited < 40_000 && guard.value.refining; waited += 200)
     await pause(200);
   await pause(300);
+}
+
+// CatStudio: foto final feita no processador (ver photo/raycast.ts)
+const imageCache = useImageCacheStore();
+function startPhoto(scale: number) {
+  const view = vtkView.value;
+  const imageID = currentImageID.value;
+  const image = imageID ? imageCache.getVtkImageData(imageID) : null;
+  if (!view || !imageID || !image) return;
+  takePhoto({ view, viewID: viewId.value, imageID, image, scale, shadow: 0.7 });
 }
 
 async function exportPNG(scale = 1) {
