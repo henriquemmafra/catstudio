@@ -4,6 +4,8 @@
 import { useDatasetStore } from '@/src/store/datasets';
 import { useDICOMStore } from '@/src/store/datasets-dicom';
 import { forgetSculpts } from '@/src/catstudio/sculpt/state';
+import { forgetBoxRotations } from '@/src/catstudio/cropRotation';
+import { forgetAutoCuts } from '@/src/catstudio/sculpt/autoTable';
 import { valveMode } from '@/src/catstudio/valveMode';
 import { directorMode } from '@/src/catstudio/director/mode';
 
@@ -15,4 +17,6 @@ export function closeExam() {
   Object.keys(useDICOMStore().volumeInfo).forEach((id) => datasets.remove(id));
   datasets.removeAll();
   forgetSculpts();
+  forgetAutoCuts();
+  forgetBoxRotations();
 }

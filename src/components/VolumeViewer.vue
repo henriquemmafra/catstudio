@@ -1,5 +1,9 @@
 <template>
-  <div class="vtk-container-wrapper volume-viewer-container" tabindex="0">
+  <div
+    ref="rootEl"
+    class="vtk-container-wrapper volume-viewer-container"
+    tabindex="0"
+  >
     <div class="vtk-container" data-testid="two-view-container">
       <v-progress-linear
         v-if="isImageLoading"
@@ -107,6 +111,17 @@
             <span class="ml-3">{{ currentImageMetadata.name }}</span>
           </div>
         </template>
+        <template #top-center>
+          <div
+            v-if="windowDrag.active"
+            class="annotation-cell window-drag-badge"
+            data-testid="window-drag-badge"
+          >
+            Janela 3D: nível {{ windowDrag.level >= 0 ? '+' : ''
+            }}{{ windowDrag.level }} · opacidade
+            {{ windowDrag.opacity >= 0 ? '+' : '' }}{{ windowDrag.opacity }}%
+          </div>
+        </template>
         <template #top-right>
           <div class="annotation-cell">
             <span>{{ presetName }}</span>
@@ -133,6 +148,7 @@
           </div>
         </template>
       </view-overlay-grid>
+      <crop-rotate :view="vtkView" :image-id="currentImageID" />
       <sculpt-panel
         v-model:open="sculptOpen"
         :view="vtkView"
@@ -162,6 +178,8 @@ import ViewTypeSwitcher from '@/src/components/ViewTypeSwitcher.vue';
 import { captureViewHiRes, captureViewPNG } from '@/src/catstudio/capture';
 import { guardStatus } from '@/src/catstudio/renderGuard';
 import SculptPanel from '@/src/catstudio/components/SculptPanel.vue';
+import CropRotate from '@/src/catstudio/components/CropRotate.vue';
+import { useWindowDrag } from '@/src/catstudio/useWindowDrag';
 
 interface Props {
   viewId: string;
@@ -174,6 +192,7 @@ interface VolumeViewerOptions {
 
 const vtkView = ref<VtkViewApi>();
 const sculptOpen = ref(false);
+const rootEl = ref<HTMLElement>();
 
 const props = defineProps<Props>();
 
@@ -249,6 +268,9 @@ onVTKEvent(currentImageData, 'onModified', () => {
   vtkView.value?.requestRender();
 });
 
+// CatStudio: os dois botões do mouse juntos mexem na janela do 3D
+const windowDrag = useWindowDrag(rootEl, viewId, currentImageID);
+
 // color preset
 const coloringStore = useVolumeColoringStore();
 const coloringConfig = computed(() =>
@@ -265,6 +287,14 @@ const presetName = computed(
 <style scoped>
 .guard-badge {
   margin-left: 44px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(20, 24, 28, 0.78);
+  color: #ffd166;
+  font-size: 12px;
+}
+
+.window-drag-badge {
   padding: 1px 8px;
   border-radius: 10px;
   background: rgba(20, 24, 28, 0.78);

@@ -46,6 +46,9 @@ Na vista 3D, a tesoura (canto de cima, à esquerda) abre as ferramentas de
 escultura. Nada disso altera o exame nem as vistas 2D: o 3D passa a desenhar
 uma cópia em que o que foi apagado vira ar.
 
+- **Borracha** — com o botão esquerdo apertado, apaga a superfície por onde
+  o cursor passa (raio ajustável); passar de novo vai mais fundo. O gesto
+  inteiro vale um desfazer.
 - **Laço: apagar / manter** — contorne com o botão esquerdo; o corte vale para
   toda a profundidade daquela direção de visão (gire e corte de novo para
   esculpir em qualquer ângulo). Depois de cada laço a vista volta a girar.
@@ -61,7 +64,27 @@ uma cópia em que o que foi apagado vira ar.
 - **Detectar osso** — marca as estruturas densas e heterogêneas (cortical +
   medular). Depois, o controle **Osso** vai de escondido a normal, passando
   por translúcido. **Osso sim/não** corrige no clique o que a detecção errou.
+- **Tirar mesa** — esconde a mesa, o travesseiro, os cabos e todo o ar de
+  fora do corpo. O corpo é a maior estrutura de tecido do exame; o ar de
+  dentro (pulmões, traqueia, alças) fica. Marque "sempre, ao abrir" para isso
+  acontecer sozinho em todo exame (a escolha fica guardada no navegador).
 - **Desfazer** (12 níveis) e **Restaurar tudo**.
+
+**Janela do 3D com os dois botões do mouse**: com o esquerdo e o direito
+apertados juntos, arrastar para cima/baixo anda a curva de opacidade para
+tecidos menos/mais densos, e para a direita/esquerda deixa mais/menos opaco.
+Vale para os presets de TC (curva de pontos).
+
+Tirar mesa também é heurística e só foi testada em fantoma: corta contatos
+de até 2 voxels entre corpo e mesa (roupa, lençol); um braço ao lado do corpo
+sem encostar nele sai junto com a mesa; desfaça se errar.
+
+**Girar a caixa de corte**: com a ferramenta de recorte ligada, aparece
+"Girar caixa" no alto da vista 3D. Marcado, arrastar com o botão esquerdo
+gira a caixa em torno do centro do exame (o exame e a câmera ficam parados);
+as alças continuam funcionando na caixa girada. "Alinhar" volta ao exame. A
+rotação vale só no 3D: as linhas de corte das vistas 2D continuam mostrando a
+caixa alinhada, e ela não entra na sessão salva.
 
 A detecção de osso é uma heurística, não uma segmentação validada: vaso
 contrastado encostado em osso sai junto, osso muito pouco denso pode ficar de
@@ -241,11 +264,12 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   ordem; liberação de memória) dentro da suíte completa do projeto (2460
   passam; 1 falha só porque baixa um arquivo de data.kitware.com, sem
   acesso à internet no ambiente de teste).
-- **Esculpir o 3D, osso, luz, vistas pretas e tela inicial**: 35 testes
-  unitários (laço, estrutura ligada, fragmentos, clique com caixa de corte,
+- **Esculpir o 3D, osso, luz, vistas pretas e tela inicial**: 51 testes
+  unitários (borracha; caixa de corte girada; tirar mesa com parede torácica fina, mesa encostada e traqueia
+  aberta no primeiro corte; janela do 3D; laço, estrutura ligada, fragmentos, clique com caixa de corte,
   crescer por camadas, detecção e correção de osso, volume de dois
   componentes, desfazer, presets de luz, limite da exportação, recuperação do
-  contexto de vídeo) e 5 testes no navegador (laço, clique, giro e desfazer;
+  contexto de vídeo) e 7 testes no navegador (girar a caixa de corte e borracha; dois botões e tirar mesa; laço, clique, giro e desfazer;
   osso translúcido e escondido e crescer segurando; presets de luz, fundo e
   exportação 2×; vistas que voltam depois da perda do contexto WebGL; botão
   da tela inicial).

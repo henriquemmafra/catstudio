@@ -8,6 +8,7 @@
  * testadas.
  */
 export type Dims = [number, number, number];
+export type Vec3 = [number, number, number];
 
 export interface Grid {
   dims: Dims;
@@ -124,6 +125,52 @@ function cutRow(grid: Grid, lasso: Lasso, start: number[]): number {
       changed += 1;
     }
   }
+  return changed;
+}
+
+// ---------- borracha ----------
+
+export interface Ball {
+  /** índice do voxel no centro */
+  center: number;
+  /** raio em voxels, por eixo (o voxel pode não ser cúbico) */
+  radius: Vec3;
+}
+
+function hideBallRow(grid: Grid, ball: Ball, at: number[]): number {
+  const [j, k, reach] = at;
+  const [nx, ny] = grid.dims;
+  const ci = ball.center % nx;
+  const half = Math.floor(ball.radius[0] * Math.sqrt(reach));
+  const row = nx * (j + ny * k);
+  let changed = 0;
+  for (let i = Math.max(0, ci - half); i <= Math.min(nx - 1, ci + half); i++) {
+    changed += 1 - grid.hidden[row + i];
+    grid.hidden[row + i] = 1;
+  }
+  return changed;
+}
+
+/** Esconde uma bola de voxels. Devolve quantos estavam visíveis. */
+export function hideBall(grid: Grid, ball: Ball): number {
+  const [nx, ny, nz] = grid.dims;
+  const cj = Math.floor(ball.center / nx) % ny;
+  const ck = Math.floor(ball.center / (nx * ny));
+  const [, rj, rk] = ball.radius.map((r) => Math.max(r, 0.5));
+  let changed = 0;
+  for (
+    let k = Math.max(0, Math.ceil(ck - rk));
+    k <= Math.min(nz - 1, ck + rk);
+    k++
+  )
+    for (
+      let j = Math.max(0, Math.ceil(cj - rj));
+      j <= Math.min(ny - 1, cj + rj);
+      j++
+    ) {
+      const reach = 1 - ((j - cj) / rj) ** 2 - ((k - ck) / rk) ** 2;
+      if (reach >= 0) changed += hideBallRow(grid, ball, [j, k, reach]);
+    }
   return changed;
 }
 
@@ -269,8 +316,6 @@ export function removeFragments(
 }
 
 // ---------- clique: achar o que está sob o cursor ----------
-
-export type Vec3 = [number, number, number];
 
 export interface Ray {
   /** em coordenadas de índice do volume */

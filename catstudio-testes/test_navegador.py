@@ -1015,3 +1015,139 @@ def test_presets_de_luz_fundo_e_exportacao_em_alta(session, tmp_path):
     page.wait_for_timeout(2500)
     assert igual(_gray_3d(page, view))
     assert not session.errors, session.errors
+
+
+def _opacity_curve(page):
+    return page.evaluate(f"""() => {{ const p = {PINIA};
+        const id = [...p._s.get('image-cache').imageIds][0];
+        const view = Object.values(p._s.get('view').viewByID).find(v => v.type === '3D');
+        const f = p._s.get('volumeColoring').getConfig(view.id, id).opacityFunction;
+        return [f.shift, f.shiftAlpha]; }}""")
+
+
+def test_dois_botoes_mexem_na_janela_do_3d_e_tirar_mesa(session):
+    """Esquerdo + direito juntos e arrastar muda a curva de opacidade (a
+    "janela" do 3D) sem girar a câmera; e "Tirar mesa" deixa só a maior
+    estrutura do exame."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    caixa = view.bounding_box()
+    cx, cy = caixa["x"] + caixa["width"] / 2, caixa["y"] + caixa["height"] / 2
+    camera = lambda: page.evaluate(f"""() => {{ const p = {PINIA};
+        const view = Object.values(p._s.get('view').viewByID).find(v => v.type === '3D');
+        const id = [...p._s.get('image-cache').imageIds][0];
+        return JSON.stringify(p._s.get('viewCamera').getConfig(view.id, id) ?? null); }}""")
+    antes = _opacity_curve(page)
+    camera_antes = camera()
+    page.mouse.move(cx, cy)
+    page.mouse.down(button="left")
+    page.mouse.down(button="right")
+    page.mouse.move(cx + 60, cy + 90, steps=6)
+    assert "Janela 3D" in page.get_by_test_id("window-drag-badge").inner_text()
+    page.mouse.up(button="right")
+    page.mouse.move(cx + 120, cy + 140, steps=4)   # com um botão só, nada acontece
+    page.mouse.up(button="left")
+    page.wait_for_timeout(1500)
+    depois = _opacity_curve(page)
+    assert abs(depois[0] - antes[0] - 90 / 1500) < 0.01, (antes, depois)
+    assert abs(depois[1] - antes[1] + 60 / 500) < 0.02, (antes, depois)
+    assert camera() == camera_antes
+    assert page.get_by_test_id("window-drag-badge").count() == 0
+
+    # tirar mesa: no fantoma tudo o que aparece no 3D está dentro do corpo,
+    # então o corte esconde o ar de fora e não pode apagar nada visível
+    page.mouse.move(cx, cy)
+    page.mouse.down(button="left")
+    page.mouse.down(button="right")
+    page.mouse.move(cx - 60, cy - 90, steps=6)     # devolve a janela
+    page.mouse.up(button="right")
+    page.mouse.up(button="left")
+    page.get_by_test_id("open-sculpt").click()
+    inteiro = _sculpt_shot(page, view)
+    escondidos = lambda: page.evaluate(f"""() => __catstudio.sculpt(
+        [...{PINIA}._s.get('image-cache').imageIds][0]).hiddenVoxels""")
+    page.get_by_test_id("sculpt-table").click()
+    page.wait_for_timeout(3000)
+    assert "fora do corpo" in _sculpt_status(page), _sculpt_status(page)
+    assert escondidos() > 100000
+    sem_mesa = _sculpt_shot(page, view)
+    claros = lambda im: int((im[60:-60] > 60).sum())
+    assert abs(claros(sem_mesa) - claros(inteiro)) < 0.05 * claros(inteiro)
+    page.get_by_test_id("sculpt-undo").click()
+    assert escondidos() == 0
+    assert not session.errors, session.errors
+
+
+def test_girar_a_caixa_de_corte_e_borracha(session):
+    """"Girar caixa": arrastar gira a caixa de corte (o exame e a câmera ficam
+    parados) e o corte passa a ser oblíquo; "Alinhar" desfaz. E a borracha
+    apaga a superfície por onde passa."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(4000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    caixa = view.bounding_box()
+    cx, cy = caixa["x"] + caixa["width"] / 2, caixa["y"] + caixa["height"] / 2
+    page.evaluate(f"() => {PINIA}._s.get('tool').setCurrentTool('Crop')")
+    # caixa mais baixa que o exame: corta as pontas do cilindro
+    page.evaluate(f"""() => {{ const p = {PINIA}; const crop = p._s.get('crop');
+        const id = [...p._s.get('image-cache').imageIds][0];
+        const c = JSON.parse(JSON.stringify(crop.croppingByImageID[id]));
+        const mid = (c.Axial[0] + c.Axial[1]) / 2, q = (c.Axial[1] - c.Axial[0]) / 4;
+        crop.setCropping(id, {{ ...c, Axial: [mid - q, mid + q] }}); }}""")
+    estado = lambda: page.evaluate(f"""() => {{ const p = {PINIA};
+        const id = [...p._s.get('image-cache').imageIds][0];
+        const view = Object.values(p._s.get('view').viewByID).find(v => v.type === '3D');
+        return [JSON.stringify(p._s.get('crop').croppingByImageID[id]),
+                JSON.stringify(p._s.get('viewCamera').getConfig(view.id, id) ?? null)]; }}""")
+    # sem as alças verdes da caixa, só o volume
+    volume = lambda: (lambda im: (im[..., 0] > 90) & (im[..., 1] < 235))(
+        np.asarray(__import__("PIL.Image", fromlist=["x"]).open(io.BytesIO(view.screenshot())).convert("RGB")).astype(int))
+    page.wait_for_timeout(3000)
+    alinhada = volume()
+    antes = estado()
+    assert page.get_by_test_id("crop-rotate-align").count() == 0
+
+    page.get_by_test_id("crop-rotate-toggle").click()
+    page.mouse.move(cx + 100, cy + 120)
+    page.mouse.down()
+    page.mouse.move(cx + 100, cy + 40, steps=8)
+    page.mouse.up()
+    page.wait_for_timeout(3000)
+    girada = volume()
+    assert estado() == antes                 # nem a caixa mudou de tamanho, nem a câmera girou
+    assert (girada != alinhada).mean() > 0.002   # mas o corte agora é outro
+
+    page.get_by_test_id("crop-rotate-toggle").click()
+    page.get_by_test_id("crop-rotate-align").click()
+    page.wait_for_timeout(3000)
+    assert (volume() != alinhada).mean() < 0.3 * (girada != alinhada).mean()
+    assert page.get_by_test_id("crop-rotate-align").count() == 0
+
+    # borracha na esfera da direita
+    page.evaluate(f"() => {PINIA}._s.get('tool').setCurrentTool('WindowLevel')")
+    page.evaluate(f"""() => {{ const p = {PINIA}; const id = [...p._s.get('image-cache').imageIds][0];
+        p._s.get('crop').resetCropping(id); }}""")
+    page.get_by_test_id("open-sculpt").click()
+    inteiro = _sculpt_shot(page, view)
+    meio = inteiro.shape[1] // 2
+    ys, xs = np.nonzero(inteiro[60:-60, meio + 40:] > 120)
+    ex, ey = caixa["x"] + meio + 40 + float(np.median(xs)), caixa["y"] + 60 + float(np.median(ys))
+    page.get_by_test_id("sculpt-brush-remove").click()
+    page.get_by_test_id("sculpt-brush-size").fill("12")
+    page.mouse.move(ex - 6, ey)
+    page.mouse.down()
+    for passo in range(8):
+        page.mouse.move(ex - 6 + 2 * passo, ey + (passo % 2))
+        page.wait_for_timeout(130)
+    page.mouse.up()
+    page.wait_for_timeout(800)
+    assert "Borracha:" in _sculpt_status(page), _sculpt_status(page)
+    apagado = _sculpt_shot(page, view)
+    esfera = lambda im: int((im[60:-60, meio + 40:] > 60).sum())
+    assert esfera(apagado) < 0.5 * esfera(inteiro)
+    page.get_by_test_id("sculpt-undo").click()
+    assert esfera(_sculpt_shot(page, view)) > 0.9 * esfera(inteiro)
+    assert not session.errors, session.errors

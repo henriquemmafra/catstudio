@@ -7,18 +7,20 @@ import { computed, nextTick, ref, toRefs, watch } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import type { Maybe } from '@/src/types';
 import type { VtkViewApi } from '@/src/types/vtk-types';
-import { useCropStore } from '@/src/store/tools/crop';
+import { useBoxPlanes } from '@/src/catstudio/cropRotation';
 import type { Point } from '@/src/catstudio/sculpt/mask';
 import {
   resetSculpt,
   sculptSummary,
   undoSculpt,
 } from '@/src/catstudio/sculpt/state';
-import { baseImageOf } from '@/src/catstudio/sculpt/useSculptedImage';
 import {
+  type BrushStroke,
   type GrowStroke,
+  startBrushStroke,
   type SculptTarget,
   findBone,
+  removeTable,
   flipBone,
   fragments,
   lasso,
@@ -33,6 +35,15 @@ import {
   hintFor,
 } from '@/src/catstudio/sculpt/toolList';
 import SculptBone from '@/src/catstudio/components/SculptBone.vue';
+import {
+  autoTable,
+  setAutoTable,
+  shouldAutoCut,
+} from '@/src/catstudio/sculpt/autoTable';
+import {
+  baseImageOf,
+  baseVersions,
+} from '@/src/catstudio/sculpt/useSculptedImage';
 
 interface Props {
   view: Maybe<VtkViewApi>;
@@ -50,10 +61,10 @@ const message = ref('');
 const threshold = ref(0);
 const range = ref<[number, number]>([0, 1]);
 const fragmentMl = ref(1);
+const brushMm = ref(8);
 const path = ref<Point[]>([]);
 
-const cropStore = useCropStore();
-const planes = cropStore.getComputedVTKPlanes(imageId);
+const planes = useBoxPlanes(imageId);
 const summary = computed(() => sculptSummary(imageId.value ?? null));
 const hint = computed(() => hintFor(mode.value));
 const container = computed(() => root.value?.parentElement ?? null);
@@ -155,23 +166,61 @@ function stopGrowing() {
   growing = null;
 }
 
+// ----- borracha -----
+let brushing: BrushStroke | null = null;
+let lastBrush = 0;
+const BRUSH_STEP_MS = 90;
+
+function startBrushing(point: Point) {
+  const where = target();
+  if (!where) return;
+  brushing = startBrushStroke(where, {
+    threshold: threshold.value,
+    radiusMm: brushMm.value,
+  });
+  brushing.at(point);
+  lastBrush = performance.now();
+}
+
+/** A cada passo a vista é refeita; por isso a borracha anda em passos. */
+function brushTo(point: Point) {
+  if (!brushing || performance.now() - lastBrush < BRUSH_STEP_MS) return;
+  lastBrush = performance.now();
+  brushing.at(point);
+}
+
+function stopBrushing() {
+  if (brushing) message.value = brushing.finish();
+  brushing = null;
+}
+
+/** Só o botão esquerdo sozinho (os dois juntos mexem na janela do 3D). */
+const leftAlone = (event: PointerEvent) =>
+  event.button === 0 && event.buttons === 1;
+
+const GESTURE_START: Partial<Record<string, (point: Point) => void>> = {
+  grow: startGrowing,
+  brush: startBrushing,
+};
+
 function onPointerDown(event: PointerEvent) {
-  if (!open.value || busy.value || event.button !== 0 || fromPanel(event))
-    return;
-  const point = toPoint(event);
-  if (!point || !mode.value) return;
-  if (gesture() !== 'pick') {
+  if (!open.value || busy.value || fromPanel(event)) return;
+  const point = leftAlone(event) ? toPoint(event) : null;
+  const kind = gesture();
+  if (!point || !kind) return;
+  if (kind !== 'pick') {
     event.stopPropagation();
     event.preventDefault();
   }
   path.value = [point];
-  drawing = gesture() === 'lasso';
-  if (gesture() === 'grow') startGrowing(point);
+  drawing = kind === 'lasso';
+  GESTURE_START[kind]?.(point);
 }
 
 function onPointerMove(event: PointerEvent) {
   const point = toPoint(event);
   if (!point || !path.value.length) return;
+  if (brushing) brushTo(point);
   if (drawing) {
     event.stopPropagation();
     path.value = [...path.value, point];
@@ -210,6 +259,7 @@ function onPointerUp(event: PointerEvent) {
     drawing = false;
     finishLasso();
   } else if (growing) stopGrowing();
+  else if (brushing) stopBrushing();
   else finishClick(event);
   path.value = [];
 }
@@ -236,6 +286,18 @@ const removeFragmentsNow = () =>
   run((where) => fragments(where, threshold.value, fragmentMl.value));
 
 const detectBoneNow = () => run(findBone);
+const removeTableNow = () => run(removeTable);
+
+// tirar a mesa sozinho, uma vez por exame, quando o volume do 3D fica pronto
+watch(
+  () => [view.value, imageId.value && baseVersions[imageId.value]],
+  () => {
+    const id = imageId.value;
+    if (!id || !baseImageOf(id) || !target()) return;
+    if (shouldAutoCut(id, summary.value.hiddenVoxels > 0)) removeTableNow();
+  },
+  { immediate: true, flush: 'post' }
+);
 
 function undo() {
   if (imageId.value && undoSculpt(imageId.value)) message.value = 'Desfeito.';
@@ -294,6 +356,17 @@ function restore() {
           data-testid="sculpt-threshold"
         />
       </label>
+      <label v-if="mode === 'brush-remove'" class="sculpt-label">
+        Borracha: raio de <b>{{ brushMm }} mm</b>
+        <input
+          v-model.number="brushMm"
+          type="range"
+          min="2"
+          max="40"
+          step="1"
+          data-testid="sculpt-brush-size"
+        />
+      </label>
       <label class="sculpt-label">
         Fragmento: até <b>{{ fragmentMl }} cm³</b>
         <input
@@ -336,6 +409,27 @@ function restore() {
         >
           Restaurar tudo
         </v-btn>
+      </div>
+      <div class="sculpt-tools">
+        <v-btn
+          size="small"
+          variant="tonal"
+          prepend-icon="mdi-bed-outline"
+          :disabled="busy"
+          data-testid="sculpt-table"
+          @click="removeTableNow"
+        >
+          Tirar mesa
+        </v-btn>
+        <label class="sculpt-check">
+          <input
+            type="checkbox"
+            :checked="autoTable.enabled"
+            data-testid="sculpt-table-auto"
+            @change="setAutoTable(($event.target as HTMLInputElement).checked)"
+          />
+          sempre, ao abrir
+        </label>
       </div>
       <sculpt-bone
         :image-id="imageId"
@@ -411,6 +505,13 @@ function restore() {
   text-transform: none;
   letter-spacing: 0;
   justify-content: flex-start;
+}
+
+.sculpt-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .sculpt-label {

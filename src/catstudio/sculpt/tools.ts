@@ -12,6 +12,7 @@ import {
   type Point,
   type Vec3,
   firstHit,
+  hideBall,
   keepStructure,
   lassoCut,
   rasterPolygon,
@@ -29,6 +30,7 @@ import {
 } from './state';
 import { type Grower, grownVoxels, growLayers, startGrow } from './grow';
 import { BONE_LOW, countBone, detectBone, toggleBone } from './bone';
+import { removeOutsideBody } from './body';
 
 export interface SculptTarget {
   view: VtkViewApi;
@@ -308,3 +310,56 @@ export function flipBone(target: SculptTarget, point: Point): string {
 
 export const hasBone = (imageID: string) =>
   (boneViews[imageID]?.voxels ?? 0) > 0;
+
+// ---------- mesa ----------
+
+/** Esconde a mesa e tudo o mais que está fora do corpo. */
+export function removeTable(target: SculptTarget): string {
+  let message = 'Não achei o corpo neste exame; nada foi cortado.';
+  editSculpt(target.imageID, dimsOf(target.base), (hidden) => {
+    const result = removeOutsideBody(gridOf(target, hidden));
+    if (!result.body) return 0;
+    message = result.tissue
+      ? `Tirei a mesa e o que estava fora do corpo (${formatMl(
+          volumeMl(target.base, result.tissue)
+        )} de material).`
+      : 'Não havia mesa nem objetos fora do corpo; cortei só o ar de fora.';
+    return result.hidden;
+  });
+  return message;
+}
+
+// ---------- borracha ----------
+
+export interface BrushStroke {
+  /** apaga uma bola em volta do que está sob o cursor */
+  at(point: Point): void;
+  finish(): string;
+}
+
+/** Borracha: esculpe a superfície por onde o cursor passa. */
+export function startBrushStroke(
+  target: SculptTarget,
+  options: { threshold: number; radiusMm: number }
+): BrushStroke {
+  const stroke = beginStroke(target.imageID, dimsOf(target.base));
+  const grid = gridOf(target, stroke.hidden);
+  const spacing = target.base.getSpacing();
+  const radius = spacing.map((mm) => options.radiusMm / mm) as Vec3;
+  let erased = 0;
+  return {
+    at: (point) => {
+      const center = voxelUnder(target, point, options.threshold);
+      if (center < 0) return;
+      erased += hideBall(grid, { center, radius });
+      stroke.update();
+    },
+    finish: () => {
+      if (!erased) {
+        stroke.cancel();
+        return 'A borracha não encostou em nada.';
+      }
+      return `Borracha: ${formatMl(volumeMl(target.base, erased))} apagados.`;
+    },
+  };
+}

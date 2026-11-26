@@ -8,10 +8,11 @@ export type SculptMode =
   | 'pick-keep'
   | 'grow-remove'
   | 'grow-keep'
-  | 'pick-bone';
+  | 'pick-bone'
+  | 'brush-remove';
 
-/** Como o gesto funciona: arrastar um contorno, clicar ou segurar. */
-export type Gesture = 'lasso' | 'pick' | 'grow';
+/** Como o gesto funciona: contornar, clicar, segurar ou passar a borracha. */
+export type Gesture = 'lasso' | 'pick' | 'grow' | 'brush';
 
 export const gestureOf = (mode: SculptMode | null): Gesture | null =>
   mode ? (mode.split('-')[0] as Gesture) : null;
@@ -24,6 +25,12 @@ export interface SculptTool {
 }
 
 export const SCULPT_TOOLS: SculptTool[] = [
+  {
+    mode: 'brush-remove',
+    icon: 'mdi-brush',
+    title: 'Borracha',
+    hint: 'Passe com o botão esquerdo apertado: a borracha apaga a superfície por onde passa. Passe de novo para ir mais fundo.',
+  },
   {
     mode: 'lasso-remove',
     icon: 'mdi-lasso',

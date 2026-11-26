@@ -5,7 +5,7 @@
  * escondidos valem o mínimo do exame (ar). O exame original e as vistas 2D
  * nunca são tocados.
  */
-import { type Ref, shallowRef, watch, onScopeDispose } from 'vue';
+import { type Ref, reactive, shallowRef, watch, onScopeDispose } from 'vue';
 import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
 import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray';
 import type { TypedArray } from '@kitware/vtk.js/types';
@@ -22,7 +22,15 @@ import {
 
 /** Volumes-base por exame, para as ferramentas lerem os valores originais. */
 const bases = new Map<string, vtkImageData>();
+/** Muda quando o volume-base de um exame chega ou é trocado. */
+export const baseVersions = reactive<Record<string, number>>({});
 export const baseImageOf = (imageID: string) => bases.get(imageID) ?? null;
+
+function registerBase(imageID: string, image: vtkImageData) {
+  if (bases.get(imageID) === image) return;
+  bases.set(imageID, image);
+  baseVersions[imageID] = (baseVersions[imageID] ?? 0) + 1;
+}
 
 export interface Layers {
   /** 1 = escondido pela escultura */
@@ -119,7 +127,7 @@ export function useSculptedImage(
   const refresh = () => {
     const id = imageID.value;
     const image = base.value;
-    if (id && image) bases.set(id, image);
+    if (id && image) registerBase(id, image);
     const plan = id && image ? planFor(id, image) : null;
     if (!image || !plan) {
       copy = null;

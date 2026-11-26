@@ -19,6 +19,8 @@ import {
 import { VtkViewContext } from '@/src/components/vtk/context';
 import { Maybe } from '@/src/types';
 import { watchImmediate } from '@vueuse/core';
+import { mat4 } from 'gl-matrix';
+import { rotationOf } from '@/src/catstudio/cropRotation';
 
 function isValidCroppingPlanes(planes: LPSCroppingPlanes) {
   return (
@@ -82,11 +84,31 @@ export default defineComponent({
     });
 
     const { metadata: imageMetadata } = useImage(imageId);
-    watchImmediate(imageMetadata, (metadata) => {
-      state.setWorldToIndexT(metadata.worldToIndex);
-      state.setIndexToWorldT(metadata.indexToWorld);
-      state.placeWidget(metadata.worldBounds);
-    });
+    // CatStudio: a caixa pode estar girada em torno do centro do volume; as
+    // alças acompanham porque vivem no espaço de índices "girado"
+    watchImmediate(
+      [imageMetadata, () => rotationOf(imageId.value)] as const,
+      ([metadata, rotation]) => {
+        const turn = rotation as unknown as mat4;
+        const indexToWorld = mat4.multiply(
+          mat4.create(),
+          turn,
+          metadata.indexToWorld
+        );
+        const worldToIndex = mat4.multiply(
+          mat4.create(),
+          metadata.worldToIndex,
+          mat4.invert(mat4.create(), turn)
+        );
+        state.setWorldToIndexT(worldToIndex);
+        state.setIndexToWorldT(indexToWorld);
+        state.placeWidget(metadata.worldBounds);
+        // as alças só se reposicionam quando os planos mudam; aqui mudou a
+        // orientação, então é preciso pedir
+        factory.updateHandles();
+        view.requestRender();
+      }
+    );
 
     const applyPlanes = (lpsPlanes: DeepReadonly<LPSCroppingPlanes>) => {
       const { lpsOrientation: dirs } = imageMetadata.value;

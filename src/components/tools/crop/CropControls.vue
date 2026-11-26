@@ -3,6 +3,7 @@ import { defineComponent } from 'vue';
 import ControlButton from '@/src/components/ControlButton.vue';
 import { useCurrentImage } from '@/src/composables/useCurrentImage';
 import { useCropStore } from '@/src/store/tools/crop';
+import { resetBoxRotation } from '@/src/catstudio/cropRotation';
 
 export default defineComponent({
   components: {
@@ -16,6 +17,7 @@ export default defineComponent({
       const imageID = currentImageID.value;
       if (imageID) {
         cropStore.resetCropping(imageID);
+        resetBoxRotation(imageID);
       }
     };
 
@@ -31,7 +33,7 @@ export default defineComponent({
     <control-button
       size="40"
       icon="mdi-restore"
-      name="Reset Crop"
+      name="Voltar a caixa de corte ao exame inteiro"
       @click="resetCrop"
     />
   </v-card>
