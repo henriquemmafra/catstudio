@@ -146,3 +146,119 @@ describe('CatStudio — modo Valvas', () => {
     expect(lit(r.draw(pts, { ...base, style: 'solid' }))).toBeGreaterThan(300);
   });
 });
+
+/**
+ * Regime de uma angio-TC cardíaca fina: folheto de 0,6 mm borrado pela
+ * resolução do aparelho (sigma 0,45 mm), voxel de 0,4 mm, ruído de 30 UH. O
+ * folheto não chega a cruzar o limiar; tem um orifício central (raio 3 mm) e
+ * uma fenestração de verdade (3 mm de diâmetro, em x = +6 mm).
+ */
+function thinLeaflet(): Volume {
+  const f = 0.2;
+  const FX = 130;
+  const FZ = 80;
+  let fine = new Float32Array(FX * FX * FZ);
+  for (let k = 0; k < FZ; k++)
+    for (let j = 0; j < FX; j++)
+      for (let i = 0; i < FX; i++) {
+        const x = (i - FX / 2) * f;
+        const y = (j - FX / 2) * f;
+        const r = Math.hypot(x, y);
+        const hole = Math.hypot(x - 6, y) < 1.5;
+        const sheet = Math.abs(k * f - 8) < 0.3 && r > 3 && !hole;
+        fine[i + FX * (j + FX * k)] = r < 10 && !sheet ? 450 : 60;
+      }
+  const sigma = 0.45 / f;
+  const R = Math.ceil(3 * sigma);
+  const strides = [1, FX, FX * FX];
+  const lengths = [FX, FX, FZ];
+  for (let axis = 0; axis < 3; axis++) {
+    const out = new Float32Array(fine.length);
+    for (let o = 0; o < fine.length; o++) {
+      const pos = Math.floor(o / strides[axis]) % lengths[axis];
+      let sum = 0;
+      let weight = 0;
+      for (let d = -R; d <= R; d++) {
+        const q = Math.max(0, Math.min(lengths[axis] - 1, pos + d));
+        const w = Math.exp((-d * d) / (2 * sigma * sigma));
+        sum += fine[o + (q - pos) * strides[axis]] * w;
+        weight += w;
+      }
+      out[o] = sum / weight;
+    }
+    fine = out;
+  }
+  let state = 7;
+  const random = () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return (state + 0.5) / 4294967296;
+  };
+  const N = FX / 2;
+  const NZ = FZ / 2;
+  const data = new Int16Array(N * N * NZ);
+  for (let k = 0; k < NZ; k++)
+    for (let j = 0; j < N; j++)
+      for (let i = 0; i < N; i++) {
+        let sum = 0;
+        for (let c = 0; c < 8; c++)
+          sum +=
+            fine[
+              2 * i +
+                (c & 1) +
+                FX * (2 * j + ((c >> 1) & 1) + FX * (2 * k + (c >> 2)))
+            ];
+        const noise =
+          30 *
+          Math.sqrt(-2 * Math.log(random())) *
+          Math.cos(2 * Math.PI * random());
+        data[i + N * (j + N * k)] = Math.round(sum / 8 + noise);
+      }
+  return { data, dims: [N, N, NZ], spacing: [0.4, 0.4, 0.4] };
+}
+
+describe('CatStudio — folheto fino não sai furado', () => {
+  it('fecha os furos de volume parcial e mantém os orifícios de verdade', () => {
+    const thin = thinLeaflet();
+    // anel centrado no eixo do tubo (13, 13), no nível do folheto (z = 8)
+    const ring = planeFromPoints([7, 9.5, 8], [19, 9.5, 8], [13, 20, 8])!;
+    const cube = sampleCube(thin, ring);
+    const mesh = extractSurface(cube, {
+      radius: 12,
+      from: -4,
+      to: 4,
+      ...defaultThresholds(bloodLevel(cube)!),
+    });
+    // ocupação en face, em células de 0,5 mm
+    const H = 24;
+    const seen = new Uint8Array(4 * H * H);
+    for (let v = 0; v < mesh.kinds.length; v++) {
+      if (Math.abs(mesh.positions[3 * v + 2]) > 1.5) continue;
+      const i = Math.floor(mesh.positions[3 * v] / 0.5) + H;
+      const j = Math.floor(mesh.positions[3 * v + 1] / 0.5) + H;
+      if (i >= 0 && j >= 0 && i < 2 * H && j < 2 * H) seen[i + 2 * H * j] = 1;
+    }
+    let sheet = 0;
+    let covered = 0;
+    let open = 0;
+    let openCells = 0;
+    for (let j = 0; j < 2 * H; j++)
+      for (let i = 0; i < 2 * H; i++) {
+        const x = (i - H + 0.5) * 0.5;
+        const y = (j - H + 0.5) * 0.5;
+        const r = Math.hypot(x, y);
+        const fenestration = Math.hypot(x - 6, y);
+        if (r < 2 || fenestration < 0.8) {
+          openCells += 1;
+          open += seen[i + 2 * H * j] ? 0 : 1;
+        } else if (r > 4 && r < 8.5 && fenestration > 2.4) {
+          sheet += 1;
+          covered += seen[i + 2 * H * j];
+        }
+      }
+    expect(covered / sheet).toBeGreaterThan(0.97);
+    expect(open / openCells).toBeGreaterThan(0.9);
+    // e o ruído do sangue não vira pedaço solto: tudo o que há na lâmina é
+    // um só folheto (mais a parede)
+    expect(mesh.indices.length).toBeGreaterThan(5000);
+  });
+});

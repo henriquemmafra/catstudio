@@ -207,24 +207,37 @@ export interface ValveMesh {
   indices: Uint32Array;
 }
 
+/** Bloco de voxels (recorte do cubo em volta da região de interesse). */
+interface Grid {
+  nx: number;
+  ny: number;
+  nz: number;
+}
+
 /**
  * Campo usado para a superfície: a própria densidade, mas com o cálcio
  * "dobrado" para baixo do limiar — senão ele se confundiria com o sangue
  * (os dois são mais densos que o tecido) e sumiria da superfície.
  */
-function foldedField(cube: Cube, calcium: number): Float32Array {
-  const out = new Float32Array(cube.data.length);
+function foldedField(raw: Float32Array, calcium: number): Float32Array {
+  const out = new Float32Array(raw.length);
   for (let i = 0; i < out.length; i++) {
-    const h = cube.data[i];
+    const h = raw[i];
     out[i] = h <= calcium ? h : calcium - (h - calcium) * 8;
   }
   return out;
 }
 
-/** Suavização binomial (1-2-1) nos três eixos: só para as normais. */
-function blurred(field: Float32Array, size: number, depth: number) {
-  const strides = [1, size, size * size];
-  const lengths = [size, size, depth];
+/** Aplica um filtro 1D (janela de raio r) ao longo de cada eixo, em sequência. */
+function separable(
+  field: Float32Array,
+  g: Grid,
+  r: number,
+  op: (window: Float32Array, count: number) => number
+): Float32Array {
+  const strides = [1, g.nx, g.nx * g.ny];
+  const lengths = [g.nx, g.ny, g.nz];
+  const window = new Float32Array(2 * r + 1);
   let src = field;
   for (let axis = 0; axis < 3; axis++) {
     const dst = new Float32Array(src.length);
@@ -232,38 +245,105 @@ function blurred(field: Float32Array, size: number, depth: number) {
     const len = lengths[axis];
     for (let o = 0; o < src.length; o++) {
       const pos = Math.floor(o / st) % len;
-      const lo = pos > 0 ? src[o - st] : src[o];
-      const hi = pos < len - 1 ? src[o + st] : src[o];
-      dst[o] = 0.25 * lo + 0.5 * src[o] + 0.25 * hi;
+      let count = 0;
+      for (let d = -r; d <= r; d++) {
+        const q = Math.max(0, Math.min(len - 1, pos + d));
+        window[count++] = src[o + (q - pos) * st];
+      }
+      dst[o] = op(window, count);
     }
     src = dst;
   }
   return src;
 }
 
-/** Amostra trilinear de um campo do cubo, em coordenadas de voxel. */
+const opBlur = (w: Float32Array) => 0.25 * w[0] + 0.5 * w[1] + 0.25 * w[2];
+const opMax = (w: Float32Array, n: number) => {
+  let m = w[0];
+  for (let i = 1; i < n; i++) if (w[i] > m) m = w[i];
+  return m;
+};
+const opMin = (w: Float32Array, n: number) => {
+  let m = w[0];
+  for (let i = 1; i < n; i++) if (w[i] < m) m = w[i];
+  return m;
+};
+
+/** Suavização binomial (1-2-1) nos três eixos. */
+const blurred = (field: Float32Array, g: Grid) =>
+  separable(field, g, 1, opBlur);
+
+/**
+ * Realce dos folhetos. Um folheto é mais fino que o voxel: por volume
+ * parcial, sua densidade cai só um pouco em relação ao sangue e, onde não
+ * chega a cruzar o limiar, a superfície abria um furo que não existe. Aqui
+ * se mede essa queda diretamente — quanto o ponto é mais escuro do que o
+ * sangue a até 1,5 mm dele (fechamento morfológico menos o campo) — e toda
+ * lâmina fina com queda acima do ruído do próprio exame é levada abaixo do
+ * limiar. Onde não há queda nenhuma (orifício de verdade), nada muda.
+ */
+function enhanceLeaflets(
+  field: Float32Array,
+  g: Grid,
+  threshold: number,
+  step: number
+): Float32Array {
+  const smooth = blurred(field, g);
+  const r = Math.max(1, Math.round(1.5 / step));
+  const closed = separable(separable(smooth, g, r, opMax), g, r, opMin);
+  // ruído: a "queda" típica dentro do sangue homogêneo
+  const BIN = 2;
+  const hist = new Uint32Array(128);
+  let total = 0;
+  for (let o = 0; o < field.length; o += 3) {
+    if (smooth[o] < threshold) continue;
+    const dip = closed[o] - smooth[o];
+    hist[Math.min(127, Math.floor(dip / BIN))] += 1;
+    total += 1;
+  }
+  let acc = 0;
+  let medianDip = 0;
+  for (let b = 0; b < 128 && acc < total / 2; b++) {
+    acc += hist[b];
+    medianDip = (b + 0.5) * BIN;
+  }
+  const floor = Math.max(18, Math.min(70, 3 * medianDip));
+  const out = new Float32Array(field.length);
+  const low = threshold - 40;
+  for (let o = 0; o < field.length; o++) {
+    const h = field[o];
+    out[o] = h;
+    if (h < threshold || closed[o] < threshold) continue;
+    const dip = closed[o] - smooth[o];
+    if (dip <= floor) continue;
+    const t = Math.min(1, (dip - floor) / floor);
+    out[o] = h - (h - low) * t * t * (3 - 2 * t);
+  }
+  return out;
+}
+
+/** Amostra trilinear de um campo, em coordenadas de voxel do bloco. */
 function sampleField(
   field: Float32Array,
-  size: number,
-  depth: number,
+  g: Grid,
   x: number,
   y: number,
   z: number
 ): number {
-  const cx = Math.max(0, Math.min(size - 1.001, x));
-  const cy = Math.max(0, Math.min(size - 1.001, y));
-  const cz = Math.max(0, Math.min(depth - 1.001, z));
+  const cx = Math.max(0, Math.min(g.nx - 1.001, x));
+  const cy = Math.max(0, Math.min(g.ny - 1.001, y));
+  const cz = Math.max(0, Math.min(g.nz - 1.001, z));
   const i = Math.floor(cx);
   const j = Math.floor(cy);
   const k = Math.floor(cz);
   const fx = cx - i;
   const fy = cy - j;
   const fz = cz - k;
-  const o = i + size * (j + size * k);
+  const o = i + g.nx * (j + g.ny * k);
   const row = (q: number) => field[q] + (field[q + 1] - field[q]) * fx;
-  const face = (q: number) => row(q) + (row(q + size) - row(q)) * fy;
+  const face = (q: number) => row(q) + (row(q + g.nx) - row(q)) * fy;
   const lo = face(o);
-  return lo + (face(o + size * size) - lo) * fz;
+  return lo + (face(o + g.nx * g.ny) - lo) * fz;
 }
 
 // cantos de uma célula e as 12 arestas entre eles
@@ -292,22 +372,103 @@ const EDGES: Array<[number, number]> = [
   [3, 7],
 ];
 
+/** Tira da malha os fragmentos soltos (ruído), menores que `minVertices`. */
+function dropFragments(mesh: ValveMesh, minVertices: number): ValveMesh {
+  const count = mesh.kinds.length;
+  const parent = new Int32Array(count);
+  for (let v = 0; v < count; v++) parent[v] = v;
+  const find = (v: number) => {
+    let root = v;
+    while (parent[root] !== root) root = parent[root];
+    let at = v;
+    while (parent[at] !== root) {
+      const next = parent[at];
+      parent[at] = root;
+      at = next;
+    }
+    return root;
+  };
+  const idx = mesh.indices;
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = find(idx[t]);
+    parent[find(idx[t + 1])] = a;
+    parent[find(idx[t + 2])] = a;
+  }
+  const sizes = new Int32Array(count);
+  const calcified = new Uint8Array(count);
+  for (let v = 0; v < count; v++) {
+    const root = find(v);
+    sizes[root] += 1;
+    if (mesh.kinds[v] === KIND.calcium) calcified[root] = 1;
+  }
+  // o cálcio fica mesmo pequeno: nódulo solto é achado, não ruído
+  const keep = (v: number) => {
+    const root = find(v);
+    return sizes[root] >= minVertices || calcified[root] === 1;
+  };
+  const remap = new Int32Array(count).fill(-1);
+  let kept = 0;
+  for (let v = 0; v < count; v++) if (keep(v)) remap[v] = kept++;
+  if (kept === count) return mesh;
+  const positions = new Float32Array(kept * 3);
+  const normals = new Float32Array(kept * 3);
+  const kinds = new Uint8Array(kept);
+  for (let v = 0; v < count; v++) {
+    const w = remap[v];
+    if (w < 0) continue;
+    for (let c = 0; c < 3; c++) {
+      positions[3 * w + c] = mesh.positions[3 * v + c];
+      normals[3 * w + c] = mesh.normals[3 * v + c];
+    }
+    kinds[w] = mesh.kinds[v];
+  }
+  const indices: number[] = [];
+  for (let t = 0; t < idx.length; t += 3)
+    if (remap[idx[t]] >= 0)
+      indices.push(remap[idx[t]], remap[idx[t + 1]], remap[idx[t + 2]]);
+  return { positions, normals, kinds, indices: Uint32Array.from(indices) };
+}
+
 /**
  * Superfície sangue × tecido dentro do cilindro, por "surface nets": um
  * vértice por célula cortada pela superfície, na média dos pontos em que as
- * arestas cruzam o limiar, e um quadrilátero por aresta cortada.
+ * arestas cruzam o limiar, e um quadrilátero por aresta cortada. Trabalha
+ * num recorte do cubo (só a região pedida, com uma margem).
  */
 export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
   const { size, depth, step } = cube;
-  const field = foldedField(cube, opt.calcium);
-  const smooth = blurred(field, size, depth);
   const T = opt.threshold;
   const half = (size * step) / 2;
   const halfDepth = (depth * step) / 2;
-  const k0 = Math.max(1, Math.floor((opt.from + halfDepth) / step));
-  const k1 = Math.min(depth - 2, Math.ceil((opt.to + halfDepth) / step));
-  const sxy = size * size;
-  const vertexOf = new Int32Array(size * size * depth).fill(-1);
+  const PAD = 6;
+  const clampTo = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
+  const i0 = clampTo(Math.floor((half - opt.radius) / step) - PAD, size);
+  const i1 = clampTo(Math.ceil((half + opt.radius) / step) + PAD, size);
+  const z0 = clampTo(Math.floor((opt.from + halfDepth) / step) - PAD, depth);
+  const z1 = clampTo(Math.ceil((opt.to + halfDepth) / step) + PAD, depth);
+  const g: Grid = { nx: i1 - i0, ny: i1 - i0, nz: z1 - z0 };
+  const empty: ValveMesh = {
+    positions: new Float32Array(0),
+    normals: new Float32Array(0),
+    kinds: new Uint8Array(0),
+    indices: new Uint32Array(0),
+  };
+  if (g.nx < 4 || g.nz < 4) return empty;
+  const raw = new Float32Array(g.nx * g.ny * g.nz);
+  for (let k = 0; k < g.nz; k++)
+    for (let j = 0; j < g.ny; j++) {
+      const from = i0 + size * (j + i0 + size * (k + z0));
+      raw.set(cube.data.subarray(from, from + g.nx), g.nx * (j + g.ny * k));
+    }
+
+  const field = enhanceLeaflets(foldedField(raw, opt.calcium), g, T, step);
+  const smooth = blurred(field, g);
+  const { nx } = g;
+  const sxy = g.nx * g.ny;
+  // faixa pedida ao longo do eixo, em voxels do recorte
+  const k0 = Math.max(1, Math.floor((opt.from + halfDepth) / step) - z0);
+  const k1 = Math.min(g.nz - 2, Math.ceil((opt.to + halfDepth) / step) - z0);
+  const vertexOf = new Int32Array(raw.length).fill(-1);
   const pos: number[] = [];
   const nor: number[] = [];
   const kind: number[] = [];
@@ -316,21 +477,18 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
   const reach = Math.round(1 / step);
 
   for (let k = k0; k < k1; k++)
-    for (let j = 1; j < size - 2; j++)
-      for (let i = 1; i < size - 2; i++) {
-        const o = i + size * (j + size * k);
+    for (let j = 1; j < g.ny - 2; j++)
+      for (let i = 1; i < g.nx - 2; i++) {
+        const o = i + nx * (j + g.ny * k);
         let bits = 0;
-        let top = -Infinity;
         for (let c = 0; c < 8; c++) {
-          const q =
-            o + CORNERS[c][0] + size * CORNERS[c][1] + sxy * CORNERS[c][2];
-          value[c] = field[q];
+          value[c] =
+            field[o + CORNERS[c][0] + nx * CORNERS[c][1] + sxy * CORNERS[c][2]];
           if (value[c] >= T) bits |= 1 << c;
-          if (cube.data[q] > top) top = cube.data[q];
         }
         if (bits === 0 || bits === 255) continue;
-        const x = (i + 1) * step - half;
-        const y = (j + 1) * step - half;
+        const x = (i + i0 + 1) * step - half;
+        const y = (j + i0 + 1) * step - half;
         if (x * x + y * y > opt.radius * opt.radius) continue;
         let px = 0;
         let py = 0;
@@ -349,33 +507,31 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
         const vz = k + pz / n;
         // normal = gradiente do campo suavizado (aponta para o sangue)
         const at = (dx: number, dy: number, dz: number) =>
-          sampleField(smooth, size, depth, vx + dx, vy + dy, vz + dz);
-        const g = norm([
+          sampleField(smooth, g, vx + dx, vy + dy, vz + dz);
+        const grad = norm([
           at(1, 0, 0) - at(-1, 0, 0),
           at(0, 1, 0) - at(0, -1, 0),
           at(0, 0, 1) - at(0, 0, -1),
         ]);
-        // folheto = tecido fino: indo para longe do sangue, ele volta em < 3,6 mm
         // cálcio: algum voxel calcificado a até 1 mm (a borda do cálcio, por
         // volume parcial, tem densidade de sangue e não pode virar "folheto")
-        let dense = top;
+        let dense = -Infinity;
         for (let dk = -reach; dk <= reach + 1 && dense < opt.calcium; dk++)
           for (let dj = -reach; dj <= reach + 1 && dense < opt.calcium; dj++)
             for (let di = -reach; di <= reach + 1; di++) {
-              const q = o + di + size * dj + sxy * dk;
-              if (q >= 0 && q < cube.data.length && cube.data[q] > dense)
-                dense = cube.data[q];
+              const q = o + di + nx * dj + sxy * dk;
+              if (q >= 0 && q < raw.length && raw[q] > dense) dense = raw[q];
             }
         let type: number = dense >= opt.calcium ? KIND.calcium : KIND.wall;
+        // folheto = tecido fino: indo para longe do sangue, ele volta em < 3,6 mm
         if (type === KIND.wall)
           for (let sIdx = 2; sIdx <= thinSteps; sIdx++) {
             const h = sampleField(
               field,
-              size,
-              depth,
-              vx - g[0] * sIdx,
-              vy - g[1] * sIdx,
-              vz - g[2] * sIdx
+              g,
+              vx - grad[0] * sIdx,
+              vy - grad[1] * sIdx,
+              vz - grad[2] * sIdx
             );
             if (h >= T) {
               type = KIND.leaflet;
@@ -384,11 +540,11 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
           }
         vertexOf[o] = kind.length;
         pos.push(
-          (vx + 0.5) * step - half,
-          (vy + 0.5) * step - half,
-          (vz + 0.5) * step - halfDepth
+          (vx + i0 + 0.5) * step - half,
+          (vy + i0 + 0.5) * step - half,
+          (vz + z0 + 0.5) * step - halfDepth
         );
-        nor.push(g[0], g[1], g[2]);
+        nor.push(grad[0], grad[1], grad[2]);
         kind.push(type);
       }
 
@@ -400,18 +556,18 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
     idx.push(a, b, c, a, c, d);
   };
   for (let k = k0; k < k1; k++)
-    for (let j = 1; j < size - 2; j++)
-      for (let i = 1; i < size - 2; i++) {
-        const o = i + size * (j + size * k);
+    for (let j = 1; j < g.ny - 2; j++)
+      for (let i = 1; i < g.nx - 2; i++) {
+        const o = i + nx * (j + g.ny * k);
         const here = field[o] >= T;
         if (here !== field[o + 1] >= T)
           quad(
             vertexOf[o],
-            vertexOf[o - size],
-            vertexOf[o - size - sxy],
+            vertexOf[o - nx],
+            vertexOf[o - nx - sxy],
             vertexOf[o - sxy]
           );
-        if (here !== field[o + size] >= T)
+        if (here !== field[o + nx] >= T)
           quad(
             vertexOf[o],
             vertexOf[o - 1],
@@ -422,8 +578,8 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
           quad(
             vertexOf[o],
             vertexOf[o - 1],
-            vertexOf[o - 1 - size],
-            vertexOf[o - size]
+            vertexOf[o - 1 - nx],
+            vertexOf[o - nx]
           );
       }
 
@@ -438,10 +594,14 @@ export function extractSurface(cube: Cube, opt: ExtractOptions): ValveMesh {
     if (kinds[v] !== KIND.calcium)
       kinds[v] = votes[v] > 0 ? KIND.leaflet : KIND.wall;
 
-  return {
-    positions: Float32Array.from(pos),
-    normals: Float32Array.from(nor),
-    kinds,
-    indices: Uint32Array.from(idx),
-  };
+  // fragmentos soltos com menos de ~12 mm² de superfície são ruído
+  return dropFragments(
+    {
+      positions: Float32Array.from(pos),
+      normals: Float32Array.from(nor),
+      kinds,
+      indices: Uint32Array.from(idx),
+    },
+    Math.round(12 / (step * step))
+  );
 }
