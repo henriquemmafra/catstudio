@@ -40,6 +40,9 @@ import {
   tiltPlane,
 } from '@/src/catstudio/valveDetect';
 import { pinImage, unpinImage } from '@/src/catstudio/lazy';
+import { parseColor, valveLook as look } from '@/src/catstudio/valveLook';
+import { download } from '@/src/catstudio/capture';
+import ValveLookControls from '@/src/catstudio/components/ValveLookControls.vue';
 import { untilLoaded } from '@/src/composables/untilLoaded';
 import { useCurrentImage } from '@/src/composables/useCurrentImage';
 import { useImageCacheStore } from '@/src/store/image-cache';
@@ -509,6 +512,8 @@ function drawView(now: number) {
     style: style.value,
     clip: cut.value > 0 ? CUT_REACH - cut.value : undefined,
     fast: moving && !recording.value && fullCost > 70,
+    background: parseColor(look.background),
+    light: { ...look.light },
   };
   const key = JSON.stringify(next);
   if (pts === lastMesh && key === lastView) return;
@@ -550,14 +555,6 @@ function onViewUp() {
 }
 
 // ------------------------------------------------------------------- saída
-
-function download(blob: Blob, name: string) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-}
 
 function savePng() {
   viewCanvas.value?.toBlob((b) => b && download(b, `valva-${valve.value}.png`));
@@ -937,6 +934,7 @@ const canLoadPhases = computed(
                 aria-label="Limiar"
               />
             </div>
+            <valve-look-controls :solid="style === 'solid'" />
             <div class="d-flex align-center flex-wrap ga-2 mt-2">
               <v-btn
                 v-if="canLoadPhases"

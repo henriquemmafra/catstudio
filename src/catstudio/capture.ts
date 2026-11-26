@@ -29,3 +29,12 @@ export async function captureViewPNG(view: VtkViewApi, kind = '3d') {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+
+/** Entrega um arquivo gerado no navegador (PNG, vídeo) como download. */
+export function download(blob: Blob, name: string) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}

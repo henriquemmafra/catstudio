@@ -11,6 +11,13 @@
  * lisa em vez de mostrar os voxels.
  */
 import { KIND, type ValveMesh } from './valve';
+import {
+  LIGHT_LIMITS,
+  clampTo,
+  lightBasis,
+  lightVector,
+  type ValveLight,
+} from './valveLight';
 
 export interface ValveView {
   /** Giro em torno do eixo da valva (rad). */
@@ -35,10 +42,15 @@ export interface ValveView {
    * (mm a partir do centro do anel) não é desenhado. Ausente = sem corte.
    */
   clip?: number;
+  /** Cor do fundo (0–255 por canal). Ausente = azul-escuro padrão. */
+  background?: readonly [number, number, number];
+  /** Luz principal do modo sólido. Ausente = luz padrão. */
+  light?: ValveLight;
 }
 
-// luz principal (de cima, à esquerda, vinda do observador) e de preenchimento
-const KEY = [-0.36, -0.46, 0.81];
+// luz principal padrão (de cima, à esquerda, vinda do observador) e de
+// preenchimento; a principal pode ser trocada por `view.light`
+const DEFAULT_KEY = [-0.36, -0.46, 0.81];
 const FILL = [0.55, 0.25, 0.8];
 
 // cor por tipo (índice = KIND × 4): holograma em 0–1 com opacidade
@@ -62,16 +74,6 @@ const SHADOW_SIZE = 512;
 /** Meia-largura coberta pelo mapa, em mm. */
 const SHADOW_EXTENT = 52;
 const SHADOW_SCALE = SHADOW_SIZE / (2 * SHADOW_EXTENT);
-// base da luz: LA e LB perpendiculares a KEY (calculadas uma vez)
-const LA = (() => {
-  const l = Math.hypot(KEY[2], KEY[0]);
-  return [KEY[2] / l, 0, -KEY[0] / l];
-})();
-const LB = [
-  KEY[1] * LA[2] - KEY[2] * LA[1],
-  KEY[2] * LA[0] - KEY[0] * LA[2],
-  KEY[0] * LA[1] - KEY[1] * LA[0],
-];
 const AMBIENT = [0.8, 0.9, 1.1];
 /** Luz que atravessa o tecido volta vermelha. */
 const SCATTER = [0.9, 0.22, 0.14];
@@ -176,15 +178,34 @@ export function createValveRenderer(w: number, h: number) {
   let screen = new Float32Array(0); // x, y, profundidade por vértice
   let normal = new Float32Array(0); // normal girada por vértice
   let clip = Infinity;
+  // luz principal do quadro em curso
+  let KEY: ArrayLike<number> = DEFAULT_KEY;
+  let { la: LA, lb: LB } = lightBasis(DEFAULT_KEY);
+  let keyGain = 1;
+  let shadowGain = 1;
 
-  function background() {
+  function setLight(light: ValveLight | undefined) {
+    KEY = light ? lightVector(light.direction, light.height) : DEFAULT_KEY;
+    ({ la: LA, lb: LB } = lightBasis(KEY));
+    keyGain = light ? clampTo(light.intensity, LIGHT_LIMITS.intensity) : 1;
+    shadowGain = light ? clampTo(light.shadow, LIGHT_LIMITS.shadow) : 1;
+  }
+
+  function background(color: ValveView['background']) {
+    // padrão: azul-escuro em degradê; cor escolhida: degradê leve (o alto
+    // 15% mais escuro), para o fundo branco continuar branco
+    const top = color ? color.map((c) => 0.85 * c) : [3, 8, 16];
+    const bottom = color ?? [7, 22, 42];
     for (let y = 0; y < h; y++) {
       const t = y / h;
+      const r = top[0] + (bottom[0] - top[0]) * t;
+      const g = top[1] + (bottom[1] - top[1]) * t;
+      const b = top[2] + (bottom[2] - top[2]) * t;
       for (let x = 0; x < w; x++) {
         const o = 4 * (x + w * y);
-        rgba[o] = 3 + 4 * t;
-        rgba[o + 1] = 8 + 14 * t;
-        rgba[o + 2] = 16 + 26 * t;
+        rgba[o] = r;
+        rgba[o + 1] = g;
+        rgba[o + 2] = b;
         rgba[o + 3] = 255;
       }
     }
@@ -470,7 +491,7 @@ export function createValveRenderer(w: number, h: number) {
               for (let du = -2; du <= 2; du++)
                 if (shadow[iu + du + SHADOW_SIZE * (iv + dv)] > ld + bias)
                   dark += 1;
-            lit = 1 - dark / 25;
+            lit = 1 - (shadowGain * dark) / 25;
           }
         }
         const key = keyDot > -0.3 ? ((keyDot + 0.3) / 1.3) * lit : 0;
@@ -491,9 +512,12 @@ export function createValveRenderer(w: number, h: number) {
         const side = 1 - nz;
         const fog = Math.max(0.5, Math.min(1, 0.84 + 0.011 * z));
         const amb = 0.12 * (0.75 - 0.25 * ny) * ao;
-        const diff = (0.85 * key * (0.35 + 0.65 * ao) + 0.12 * fill * ao) * fog;
+        const diff =
+          (0.85 * keyGain * key * (0.35 + 0.65 * ao) + 0.12 * fill * ao) * fog;
         const spec =
-          (sheen * ao * lit + 0.04 * side * side * side) * gloss * fog;
+          (keyGain * sheen * ao * lit + 0.04 * side * side * side) *
+          gloss *
+          fog;
         for (let ch = 0; ch < 3; ch++) {
           const albedo = cbuf[4 * i + ch];
           const out =
@@ -554,7 +578,8 @@ export function createValveRenderer(w: number, h: number) {
     width: w,
     height: h,
     draw(mesh: ValveMesh, view: ValveView) {
-      background();
+      background(view.background);
+      setLight(view.light);
       project(mesh, view);
       clip = view.clip ?? Infinity;
       if (view.style === 'holo') drawHolo(mesh);
@@ -563,3 +588,6 @@ export function createValveRenderer(w: number, h: number) {
     },
   };
 }
+
+export { DEFAULT_LIGHT, LIGHT_LIMITS, lightVector } from './valveLight';
+export type { ValveLight } from './valveLight';
