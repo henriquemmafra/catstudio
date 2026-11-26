@@ -15,9 +15,9 @@ export const IMAGE_BOX_INFLATION = 0.5;
 
 export const Messages = {
   WebGLLost: {
-    title: 'Viewer Error',
+    title: 'A placa de vídeo derrubou as imagens',
     details:
-      'Lost the WebGL context! Please reload the webpage. If the problem persists, you may need to restart your web browser.',
+      'O navegador perdeu o contexto de vídeo (WebGL), em geral por falta de memória de vídeo. O CatStudio recria as vistas sozinho. Se voltar a acontecer, use o modo Leve em Ajustes, deixe só uma vista 3D no layout e feche outras abas pesadas.',
   },
 } as const;
 

@@ -40,6 +40,36 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
    livre, segmentação e "Salvar sessão" (arquivo local).
 8. Avisos de geometria (tilt, lacuna, série dividida) aparecem no sino.
 
+### Esculpir o 3D
+
+Na vista 3D, a tesoura (canto de cima, à esquerda) abre as ferramentas de
+escultura. Nada disso altera o exame nem as vistas 2D: o 3D passa a desenhar
+uma cópia em que o que foi apagado vira ar.
+
+- **Laço: apagar / manter** — contorne com o botão esquerdo; o corte vale para
+  toda a profundidade daquela direção de visão (gire e corte de novo para
+  esculpir em qualquer ângulo). Depois de cada laço a vista volta a girar.
+- **Clique: apagar / manter** — clique numa estrutura (osso, mesa, cabo, vaso)
+  e ela some inteira, ou fica só ela. Arrastar continua girando.
+- **Tirar fragmentos** — apaga as estruturas soltas menores que o tamanho
+  escolhido (a "poeira").
+- **Densidade mínima** — o que conta como estrutura; começa no ponto em que o
+  preset atual passa a mostrar alguma coisa.
+- **Desfazer** (12 níveis) e **Restaurar tudo**.
+
+Limites: a escultura é feita no volume que o 3D desenha (reduzido nos modos
+Leve e Equilibrado) e recomeça se o modo de desempenho mudar; estruturas que se
+tocam (osso encostado em vaso contrastado) saem juntas no clique — separe antes
+com o laço; ainda não entra na sessão salva.
+
+### Tela inicial e vistas pretas
+
+- A casinha no alto da barra de ferramentas fecha o exame e volta à tela
+  inicial.
+- Se a placa de vídeo derrubar o contexto (todas as vistas pretas e um aviso
+  no sino), o CatStudio recria as vistas sozinho. Depois de três quedas num
+  minuto ele para e mostra um botão "Tentar de novo".
+
 ### Diretor de arte (peça o corte por texto)
 
 Botão de claquete na barra lateral. Você escreve a imagem que quer e o
@@ -188,6 +218,11 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   ordem; liberação de memória) dentro da suíte completa do projeto (2460
   passam; 1 falha só porque baixa um arquivo de data.kitware.com, sem
   acesso à internet no ambiente de teste).
+- **Esculpir o 3D, vistas pretas e tela inicial**: 21 testes unitários (laço,
+  estrutura ligada, fragmentos, clique com caixa de corte, desfazer,
+  recuperação do contexto de vídeo) e 3 testes no navegador (laço, clique,
+  giro e desfazer na vista 3D; vistas que voltam depois da perda do contexto
+  WebGL; botão da tela inicial).
 - **Diretor de arte**: 71 testes unitários (geometria no espaço do paciente
   em duas orientações de aquisição, referências anatômicas num fantoma de
   tronco, inclusive com pulmão colapsado, mesa do tomógrafo fora de centro e

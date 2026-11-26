@@ -42,8 +42,12 @@ export interface RenderGuardSources {
 export function useRenderGuard(view: View, sources: RenderGuardSources) {
   const viewID = sources.viewID();
   const status = guardStatus(viewID);
+  // depois que a vista é desmontada o mapper já foi apagado e devolve null
   const specific = () =>
-    sources.mapper.getViewSpecificProperties() as Record<string, unknown>;
+    (sources.mapper.getViewSpecificProperties() ?? {}) as Record<
+      string,
+      unknown
+    >;
 
   const setScale = (scale: number) => {
     // não chama modified(): o fator só vale para o próximo quadro

@@ -69,6 +69,26 @@
                 Exportar imagem (PNG, sem textos nem dados do paciente)
               </v-tooltip>
             </v-btn>
+            <v-btn
+              class="pointer-events-all"
+              :color="sculptOpen ? 'primary' : 'white'"
+              icon
+              size="medium"
+              variant="text"
+              data-testid="open-sculpt"
+              @click="sculptOpen = !sculptOpen"
+            >
+              <v-icon size="medium" class="py-1 view-control-icon">
+                mdi-content-cut
+              </v-icon>
+              <v-tooltip
+                location="right"
+                activator="parent"
+                transition="slide-x-transition"
+              >
+                Esculpir o 3D (laço, apagar estrutura, tirar fragmentos)
+              </v-tooltip>
+            </v-btn>
             <span class="ml-3">{{ currentImageMetadata.name }}</span>
           </div>
         </template>
@@ -98,6 +118,11 @@
           </div>
         </template>
       </view-overlay-grid>
+      <sculpt-panel
+        v-model:open="sculptOpen"
+        :view="vtkView"
+        :image-id="currentImageID"
+      />
     </div>
   </div>
 </template>
@@ -121,6 +146,7 @@ import { useViewStore } from '@/src/store/views';
 import ViewTypeSwitcher from '@/src/components/ViewTypeSwitcher.vue';
 import { captureViewPNG } from '@/src/catstudio/capture';
 import { guardStatus } from '@/src/catstudio/renderGuard';
+import SculptPanel from '@/src/catstudio/components/SculptPanel.vue';
 
 interface Props {
   viewId: string;
@@ -132,6 +158,7 @@ interface VolumeViewerOptions {
 }
 
 const vtkView = ref<VtkViewApi>();
+const sculptOpen = ref(false);
 
 const props = defineProps<Props>();
 

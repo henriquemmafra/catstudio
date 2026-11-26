@@ -43,6 +43,8 @@ import {
 } from '@/src/core/streaming/chunkImage';
 import type vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
 import { useRenderGuard } from '@/src/catstudio/useRenderGuard';
+import { useSculptedImage } from '@/src/catstudio/sculpt/useSculptedImage';
+import { sculptVersions } from '@/src/catstudio/sculpt/state';
 import {
   isReduced,
   limitCvr,
@@ -87,9 +89,11 @@ const factors = computed<Factors>(() => {
   );
 });
 const reducedImage = shallowRef<vtkImageData | null>(null);
-const renderImage = computed(() =>
+const baseImage = computed(() =>
   isReduced(factors.value) ? reducedImage.value : imageData.value
 );
+// CatStudio: a escultura troca os voxels escondidos por ar numa cópia
+const renderImage = useSculptedImage(imageID, baseImage);
 
 // setup base image
 const rep = useVolumeRepresentation(view, renderImage);
@@ -118,6 +122,14 @@ onScopeDispose(() => {
   reduceJob += 1;
   reducedImage.value = null;
 });
+
+watch(
+  () => (imageID.value ? sculptVersions[imageID.value] : 0),
+  () => {
+    rep.property.setUpdatedExtents([]);
+    view.requestRender();
+  }
+);
 
 const cfun = vtkColorTransferFunction.newInstance();
 const ofun = vtkPiecewiseFunction.newInstance();

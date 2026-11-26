@@ -10,12 +10,25 @@ import {
 } from '@/src/catstudio/renderGuard';
 import { slabFor } from '@/src/catstudio/slab';
 import { performanceSettings } from '@/src/catstudio/performance';
+import { sculptSummary } from '@/src/catstudio/sculpt/state';
+
+/** A tela de vídeo compartilhada, para o teste de perda de contexto. */
+export const debugGl: { canvas: HTMLCanvasElement | null } = { canvas: null };
+
+function loseGlContext(): boolean {
+  const gl = debugGl.canvas?.getContext('webgl2');
+  const extension = gl?.getExtension('WEBGL_lose_context');
+  extension?.loseContext();
+  return !!extension;
+}
 
 export function installDebugHook() {
   (globalThis as any).__catstudio = {
     guard: (viewID: string) => ({ ...guardStatus(viewID) }),
     slab: (viewID: string) => ({ ...slabFor(viewID) }),
     performance: () => performanceSettings.mode,
+    sculpt: (imageID: string) => ({ ...sculptSummary(imageID) }),
+    loseGlContext,
     LADDER,
     FRAME_BUDGET_MS,
   };

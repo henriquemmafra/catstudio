@@ -17,9 +17,22 @@
           <div class="fill-height d-flex flex-row flex-grow-1">
             <controls-strip :has-data="hasData"></controls-strip>
             <div class="d-flex flex-column flex-grow-1">
-              <VtkRenderWindowParent>
+              <VtkRenderWindowParent
+                :key="glGeneration"
+                @context-lost="recoverGl"
+              >
                 <layout-grid v-show="hasData" :layout="layout" />
               </VtkRenderWindowParent>
+              <div
+                v-if="glGaveUp && hasData"
+                class="gl-gave-up"
+                data-testid="gl-gave-up"
+              >
+                A placa de vídeo derrubou as imagens várias vezes seguidas.
+                <v-btn size="small" color="primary" @click="retryGl">
+                  Tentar de novo
+                </v-btn>
+              </div>
               <welcome-page v-if="!hasData" :loading="showLoading">
               </welcome-page>
             </div>
@@ -86,6 +99,7 @@ import { defaultImageMetadata } from '@/src/core/progressiveImage';
 import VtkRenderWindowParent from '@/src/components/vtk/VtkRenderWindowParent.vue';
 import { useSyncWindowing } from '@/src/composables/useSyncWindowing';
 import { useMemoryPolicy } from '@/src/catstudio/memory';
+import { useGlRecovery } from '@/src/catstudio/glRecovery';
 import SeriesTriage from '@/src/catstudio/components/SeriesTriage.vue';
 import ValveMode from '@/src/catstudio/components/ValveMode.vue';
 import DirectorMode from '@/src/catstudio/components/DirectorMode.vue';
@@ -117,6 +131,9 @@ export default defineComponent({
     // CatStudio: só os volumes exibidos ficam na memória
     useMemoryPolicy();
     useKeyboardShortcuts();
+
+    // CatStudio: vistas pretas por perda do contexto de vídeo se recuperam
+    const { glGeneration, glGaveUp, recoverGl, retryGl } = useGlRecovery();
 
     // --- sync handling --- //
 
@@ -198,6 +215,10 @@ export default defineComponent({
       hasData,
       showLoading,
       layout: visibleLayout,
+      glGeneration,
+      glGaveUp,
+      recoverGl,
+      retryGl,
     };
   },
 });
@@ -234,6 +255,18 @@ export default defineComponent({
 <style src="@/src/components/styles/utils.css"></style>
 
 <style scoped>
+.gl-gave-up {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  padding: 16px 20px;
+  border-radius: 8px;
+  background: rgba(20, 24, 28, 0.92);
+  color: #ffd166;
+}
+
 #app-container {
   width: 100%;
   height: 100%;

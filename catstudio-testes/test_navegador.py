@@ -804,3 +804,124 @@ def test_caixa_de_corte_do_3d_responde_ao_arrasto(session):
     mudou = [eixo for eixo in antes if antes[eixo] != depois[eixo]]
     assert len(mudou) == 1, mudou  # uma face só
     assert not session.errors, session.errors
+
+
+# ------------------------------------------------------------------ esculpir o 3D
+
+def _gray_3d(page, view):
+    from PIL import Image
+    page.wait_for_timeout(2500)
+    return np.asarray(Image.open(io.BytesIO(view.screenshot())).convert("L")).astype(float)
+
+
+def _sculpt_status(page):
+    return page.get_by_test_id("sculpt-status").inner_text()
+
+
+def _sculpt_shot(page, view):
+    """Fotografa o 3D com o painel de escultura fechado (ele cobre a vista)."""
+    page.get_by_test_id("sculpt-close").click()
+    imagem = _gray_3d(page, view)
+    page.get_by_test_id("open-sculpt").click()
+    return imagem
+
+
+def test_esculpir_o_3d_com_laco_clique_e_desfazer(session):
+    """Laço apaga só a região contornada, clique apaga a estrutura inteira,
+    desfazer e restaurar devolvem o volume; arrastar no modo clique gira."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    page.get_by_test_id("open-sculpt").click()
+    inteiro = _sculpt_shot(page, view)
+    meio = inteiro.shape[1] // 2
+    # só a faixa do meio: em cima e embaixo ficam os textos da vista
+    claros = lambda im, cols: int((im[60:-60, cols] > 60).sum())
+    direita, esquerda = slice(meio + 6, None), slice(0, meio - 6)
+    assert claros(inteiro, direita) > 500 and claros(inteiro, esquerda) > 500
+
+    # laço em volta da metade direita da vista
+    caixa = view.bounding_box()
+    x0, y0, w, h = caixa["x"], caixa["y"], caixa["width"], caixa["height"]
+    page.get_by_test_id("sculpt-lasso-remove").click()
+    page.mouse.move(x0 + w / 2, y0 + 5)
+    page.mouse.down()
+    for x, y in [(x0 + w - 5, y0 + 5), (x0 + w - 5, y0 + h - 5),
+                 (x0 + w / 2, y0 + h - 5), (x0 + w / 2, y0 + 5)]:
+        page.mouse.move(x, y, steps=4)
+    page.mouse.up()
+    page.wait_for_timeout(1500)
+    assert "apagada" in _sculpt_status(page)
+    cortado = _sculpt_shot(page, view)
+    assert claros(cortado, direita) < 0.1 * claros(inteiro, direita)
+    assert claros(cortado, esquerda) > 0.9 * claros(inteiro, esquerda)
+
+    page.get_by_test_id("sculpt-undo").click()
+    desfeito = _sculpt_shot(page, view)
+    assert abs(claros(desfeito, direita) - claros(inteiro, direita)) < 80
+
+    # clique na esfera da direita: some a esfera inteira, o resto fica
+    ys, xs = np.nonzero(desfeito[60:-60, meio + 40:] > 120)
+    page.get_by_test_id("sculpt-pick-remove").click()
+    page.mouse.click(x0 + meio + 40 + float(np.median(xs)), y0 + 60 + float(np.median(ys)))
+    page.wait_for_timeout(2000)
+    assert "Estrutura apagada" in _sculpt_status(page), _sculpt_status(page)
+    sem_esfera = _sculpt_shot(page, view)
+    assert claros(sem_esfera, slice(meio + 40, None)) < 60
+    assert claros(sem_esfera, esquerda) > 0.9 * claros(inteiro, esquerda)
+
+    # no modo clique, arrastar continua girando e não apaga nada
+    page.get_by_test_id("sculpt-pick-remove").click()
+    escondidos = lambda: page.evaluate(f"""() => __catstudio.sculpt(
+        [...{PINIA}._s.get('image-cache').imageIds][0]).hiddenVoxels""")
+    antes = escondidos()
+    assert antes > 0
+    page.mouse.move(x0 + w / 2, y0 + h / 2)
+    page.mouse.down()
+    page.mouse.move(x0 + w / 2 + 80, y0 + h / 2 + 20, steps=5)
+    page.mouse.up()
+    girado = _sculpt_shot(page, view)
+    assert np.abs(girado - sem_esfera).mean() > 1.0
+    assert escondidos() == antes
+
+    page.get_by_test_id("sculpt-restore").click()
+    assert escondidos() == 0
+    assert not session.errors, session.errors
+
+
+# ------------------------------------------------------------------ vistas pretas e tela inicial
+
+def test_vistas_voltam_depois_que_a_placa_derruba_o_contexto(session):
+    """Perda do contexto WebGL deixava todas as vistas pretas, sem volta.
+    Agora as vistas são recriadas sozinhas."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    antes = int((_gray_3d(page, view) > 60).sum())
+    assert antes > 1000
+    assert page.evaluate("() => __catstudio.loseGlContext()")
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    depois = int((_gray_3d(page, view) > 60).sum())
+    assert depois > 0.8 * antes, (antes, depois)
+    assert any("placa de vídeo" in m for m in session.messages()), session.messages()
+
+
+def test_botao_tela_inicial_fecha_o_exame(session):
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(3000)
+    page.get_by_test_id("go-home").click()
+    page.get_by_test_id("go-home-confirm").click()
+    page.wait_for_timeout(1500)
+    estado = page.evaluate(f"""() => {{ const p = {PINIA};
+        return [p._s.get('images').idList.length, Object.keys(p._s.get('dicom').volumeInfo).length]; }}""")
+    assert estado == [0, 0], estado
+    assert page.get_by_test_id("go-home").count() == 0
+    # e dá para abrir outro exame em seguida
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(4000)
+    assert page.get_by_test_id("vtk-view vtk-volume-view").count() == 1
+    assert not session.errors, session.errors

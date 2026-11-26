@@ -18,6 +18,7 @@ import { ConnectionState, useServerStore } from '@/src/store/server';
 import LayoutSelector from '@/src/components/LayoutSelector.vue';
 import { valveMode } from '@/src/catstudio/valveMode';
 import { directorMode } from '@/src/catstudio/director/mode';
+import { closeExam } from '@/src/catstudio/closeExam';
 
 interface Props {
   hasData: boolean;
@@ -96,6 +97,37 @@ const { count: msgCount, badgeColor: msgBadgeColor } = useMessageBubble();
 
 <template>
   <div id="tools-strip" class="bg-surface d-flex flex-column align-center">
+    <v-menu v-if="hasData" location="right" :close-on-content-click="true">
+      <template v-slot:activator="{ props: menu }">
+        <div>
+          <control-button
+            v-bind="menu"
+            size="40"
+            icon="mdi-home"
+            name="Tela inicial (fechar o exame)"
+            data-testid="go-home"
+          />
+        </div>
+      </template>
+      <v-card max-width="280">
+        <v-card-text>
+          Fechar o exame e voltar à tela inicial? Medidas e cortes que não foram
+          salvos se perdem.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text">Cancelar</v-btn>
+          <v-btn
+            color="primary"
+            variant="flat"
+            data-testid="go-home-confirm"
+            @click="closeExam"
+          >
+            Fechar exame
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-menu>
     <control-button
       size="40"
       icon="mdi-file-multiple"
