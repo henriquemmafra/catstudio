@@ -40,6 +40,53 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
    livre, segmentação e "Salvar sessão" (arquivo local).
 8. Avisos de geometria (tilt, lacuna, série dividida) aparecem no sino.
 
+### Diretor de arte (peça o corte por texto)
+
+Botão de claquete na barra lateral. Você escreve a imagem que quer e o
+CatStudio desenha o corte **uma vez**, em CPU, sem redesenhar enquanto se
+ajusta e sem usar a placa de vídeo:
+
+> corte no plano sagital, linha hemiclavicular esquerda, para mostrar as
+> estruturas torácicas e a hérnia abdominal
+
+- **O que ele entende**: plano (axial, coronal, sagital); onde cortar (linha
+  média, hemiclavicular e paraesternal direita/esquerda, axilar média, ápice
+  e base pulmonar, centro); corte fino, MIP, MinIP ou média com espessura em
+  mm; janela (partes moles, mediastino, pulmão, osso, abdome, angio,
+  cérebro); "só o tórax" / "só o abdome"; fundo branco, preto ou cinza.
+- **Ajustes por texto** sobre a imagem feita: "2 cm mais lateral", "um pouco
+  mais medial", "MIP de 20 mm", "mais espesso", "janela de pulmão", "fundo
+  branco". "Desfazer" volta um passo.
+- **Localizador**: ao lado, um corte perpendicular com a linha do corte.
+  Clicar nele faz o corte passar por aquele ponto (é assim que se leva o
+  corte até um achado, como uma hérnia, que não cai na linha pedida); o
+  controle embaixo muda a altura do localizador.
+- **Saída**: PNG com as letras de orientação (A/P, S/I, D/E), régua em cm e
+  a legenda do que foi pedido.
+
+As linhas de superfície são **estimadas**, não medidas: o programa acha os
+pulmões pela densidade (ar dentro do corpo), tira deles a linha média e a
+largura de cada hemitórax, e põe a hemiclavicular a 65% do caminho entre a
+linha média e a borda lateral do pulmão (proporção anatômica média), e a
+paraesternal a 2,5 cm da linha média. A tela avisa quando a linha é
+estimada, mostra a distância à linha média e o localizador para conferir.
+Sem pulmões no exame (abdome isolado), usa o contorno do corpo e avisa que
+é menos confiável.
+
+**IA (opcional)**: se este navegador tiver a nuvem do CineDeck configurada
+(o CineDeck guarda o endereço e a chave no armazenamento do navegador, e os
+dois programas são servidos pelo mesmo endereço), o pedido vai para a rota
+`/diretor` da IA do CineDeck e volta como receita. Saem **só o texto do
+pedido** (números longos são trocados por "[número]"), a receita em uso e
+seis números de geometria; nenhuma imagem, voxel ou campo do DICOM. A
+receita que volta é conferida campo a campo antes de usar. Sem nuvem, ou se
+ela falhar, roda o interpretador local (vocabulário acima), que não envia
+nada. A barra do diretor mostra qual dos dois está em uso.
+
+Não faz nesta versão: reconstrução 3D recortada no plano, cortes oblíquos,
+achar a lesão sozinho (a IA não vê a imagem) e medir a clavícula de fato
+(para isso seria preciso segmentação, por exemplo o TotalSegmentator).
+
 ### Atalhos de leitura
 
 | Tecla | O que faz |
@@ -99,7 +146,7 @@ valem para as três vistas 2D. Em relação ao VolView, mudaram: a régua
 
 Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
 
-- **29 testes ponta a ponta no navegador** (`catstudio-testes/`): upload
+- **31 testes ponta a ponta no navegador** (`catstudio-testes/`): upload
   real pelos seletores de arquivo e de pasta, volume lido da aplicação e
   comparado voxel a voxel com um fantoma analítico — axial com pixel
   anisotrópico, implicit VR com sinal, aquisição coronal, oblíqua dupla,
@@ -128,6 +175,15 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   ordem; liberação de memória) dentro da suíte completa do projeto (2460
   passam; 1 falha só porque baixa um arquivo de data.kitware.com, sem
   acesso à internet no ambiente de teste).
+- **Diretor de arte**: 52 testes unitários (geometria no espaço do paciente
+  em duas orientações de aquisição, referências anatômicas num fantoma de
+  tronco, inclusive com pulmão colapsado, mesa do tomógrafo fora de centro e
+  exame sem pulmões; desenho do corte, MIP/MinIP/média, localizador;
+  interpretador de pedidos; cliente da nuvem) e 2 testes no navegador (o
+  pedido de exemplo, ajustes, clique no localizador, PNG; e o caminho da IA
+  com um servidor simulado). **Não testado com exame real**: a estimativa
+  das linhas só foi conferida em fantomas, e a rota `/diretor` só com
+  servidor simulado.
 - **Não testado**: Windows/macOS reais, GPUs reais, exames clínicos reais
   (só fantomas sintéticos), Safari. A trava do 3D foi medida com WebGL por
   software, que é lento como uma placa fraca mas não é uma placa real: o

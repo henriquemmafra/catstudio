@@ -13,6 +13,7 @@ Variáveis: CATSTUDIO_URL (testar um site já publicado), CHROME (executável).
 import functools
 import http.server
 import io
+import json
 import os
 import shutil
 import socket
@@ -616,6 +617,138 @@ def test_3d_nao_prende_a_pagina(browser, url, modo):
             assert page.get_by_test_id("render-guard-badge").count() == 1
         std, _ = _image_std(view.screenshot())
         assert std > 5, "vista 3D vazia"
+        assert not s.errors, s.errors
+    finally:
+        s.close()
+
+
+# ------------------------------------------------------------------ diretor de arte
+
+def _director(session):
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.get_by_test_id("open-director-mode").click()
+    page.get_by_test_id("director-mode").wait_for(timeout=20000)
+    page.wait_for_function(
+        "() => !document.querySelector('[data-testid=director-text] textarea').disabled", timeout=60000)
+    return page
+
+
+def _ask_director(page, pedido):
+    page.locator("[data-testid=director-text] textarea").first.fill(pedido)
+    page.get_by_test_id("director-go").click()
+    page.wait_for_timeout(300)
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=director-busy]').textContent.trim() === ''", timeout=60000)
+    entendi = page.get_by_test_id("director-understood")
+    return entendi.inner_text() if entendi.count() else ""
+
+
+def _cut_pixels(page):
+    """Fração de pixels claros e escuros do corte desenhado (sem a moldura)."""
+    return page.evaluate("""() => {
+        const c = document.querySelector('[data-testid=director-cut]');
+        const d = c.getContext('2d').getImageData(40, 40, c.width - 80, c.height - 120).data;
+        let bright = 0, dark = 0;
+        for (let i = 0; i < d.length; i += 4) { if (d[i] > 200) bright++; if (d[i] < 40) dark++; }
+        return { width: c.width, height: c.height, bright: bright / (d.length / 4), dark: dark / (d.length / 4) };
+    }""")
+
+
+def test_diretor_de_arte_faz_o_corte_pedido(session):
+    page = _director(session)
+    # sem nuvem configurada: nada sai do computador
+    assert "Interpretador local" in page.get_by_test_id("director-engine").inner_text()
+    assert not session.external, session.external
+
+    entendi = _ask_director(
+        page, "corte no plano sagital linha hemiclavicular esquerda pra mostrar as estruturas torácicas e hérnia abdominal")
+    assert "Corte sagital na linha hemiclavicular esquerda (estimada" in entendi
+    assert "janela de partes moles" in entendi
+    assert "não medida na clavícula" in entendi
+    corte = _cut_pixels(page)
+    # o corte passa pelo pulmão esquerdo: muito ar (escuro) e parede (cinza), sem ficar vazio
+    assert corte["width"] > 600 and corte["height"] > 600
+    assert corte["dark"] > 0.3 and corte["dark"] < 0.95, corte
+
+    # ajuste por texto: mantém o plano e a referência
+    entendi = _ask_director(page, "2 cm mais lateral, mip de 20 mm, fundo branco")
+    assert "hemiclavicular esquerda" in entendi and "20 mm para a esquerda" in entendi and "MIP de 20 mm" in entendi
+    borda = page.evaluate("""() => { const c = document.querySelector('[data-testid=director-cut]');
+        return Array.from(c.getContext('2d').getImageData(3, 3, 1, 1).data.slice(0, 3)); }""")
+    assert borda == [255, 255, 255]
+
+    # pedido sem sentido: avisa e não mexe na imagem
+    antes = page.get_by_test_id("director-understood").inner_text()
+    _ask_director(page, "faz uma coisa bonita")
+    assert "Não entendi" in " ".join(n.inner_text() for n in page.get_by_test_id("director-note").all())
+    assert page.get_by_test_id("director-understood").inner_text() == antes
+
+    # clicar no localizador passa o corte pelo ponto; desfazer volta
+    loc = page.get_by_test_id("director-locator")
+    caixa = loc.bounding_box()
+    loc.click(position={"x": caixa["width"] * 0.3, "y": caixa["height"] * 0.5})
+    page.wait_for_timeout(300)
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=director-busy]').textContent.trim() === ''", timeout=60000)
+    assert "no ponto marcado" in page.get_by_test_id("director-understood").inner_text()
+    page.get_by_test_id("director-undo").click()
+    page.wait_for_timeout(1500)
+    assert page.get_by_test_id("director-understood").inner_text() == antes
+
+    with page.expect_download(timeout=20000) as dl:
+        page.get_by_test_id("director-png").click()
+    assert dl.value.suggested_filename == "corte-sagital.png"
+    assert not session.external, session.external
+    assert not session.errors, session.errors
+
+
+def test_diretor_de_arte_usa_a_ia_quando_a_nuvem_esta_configurada(browser, url):
+    """A configuração de nuvem do CineDeck (mesma origem) liga a IA. O que sai
+    é só texto e geometria; a receita que volta é conferida; se a nuvem falha,
+    cai no interpretador local com aviso."""
+    s = Session(browser, url, init_script="""localStorage.setItem('cinedeck_nuvem',
+        JSON.stringify({ia: 'https://ia.exemplo.test', key: 'chave-de-teste'}));""")
+    try:
+        enviados = []
+
+        cors = {"access-control-allow-origin": "*", "access-control-allow-headers": "*",
+                "access-control-allow-methods": "POST, OPTIONS"}
+
+        def responder(route):
+            if route.request.method == "OPTIONS":
+                route.fulfill(status=204, headers=cors)
+                return
+            enviados.append((route.request.headers.get("x-cinedeck-key"), route.request.post_data_json))
+            if len(enviados) == 1:
+                route.fulfill(status=200, headers={**cors, "content-type": "application/json"}, body=json.dumps({
+                    "receita": {"plano": "coronal", "referencia": "axilar-media", "projecao": "mip",
+                                "espessura": 99999, "janela": "pulmao", "titulo": "<img src=x onerror=alert(1)>"},
+                    "comentario": "Coronal espesso para ver os dois pulmões."}))
+            else:
+                route.fulfill(status=404, headers=cors, body="sem rota")
+
+        s.page.route("https://ia.exemplo.test/**", responder)
+        page = _director(s)
+        assert "IA pela nuvem do CineDeck" in page.get_by_test_id("director-engine").inner_text()
+
+        entendi = _ask_director(page, "quero ver os dois pulmões de frente, paciente 123456789")
+        chave, corpo = enviados[0]
+        assert chave == "chave-de-teste"
+        assert sorted(corpo.keys()) == ["atual", "exame", "pedido"]
+        assert "123456789" not in corpo["pedido"] and "[número]" in corpo["pedido"]
+        assert all(isinstance(v, (int, float, str, list)) for v in corpo["exame"].values())
+        assert len(json.dumps(corpo)) < 1500, "só texto e geometria devem sair"
+        assert "IA:" in entendi and "Corte coronal na linha axilar média" in entendi
+        assert "MIP de 150 mm" in entendi  # espessura absurda limitada
+        assert "Coronal espesso para ver os dois pulmões." in entendi
+        assert _cut_pixels(page)["dark"] < 0.98
+
+        # nuvem sem a rota do diretor: interpretador local, com aviso
+        entendi = _ask_director(page, "janela de osso")
+        assert "janela de osso" in entendi
+        notas = " ".join(n.inner_text() for n in page.get_by_test_id("director-note").all())
+        assert "ainda não tem o diretor de arte" in notas and "interpretador local" in notas
         assert not s.errors, s.errors
     finally:
         s.close()

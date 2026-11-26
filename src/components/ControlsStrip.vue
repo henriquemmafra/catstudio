@@ -17,6 +17,7 @@ import { MessageType, useMessageStore } from '@/src/store/messages';
 import { ConnectionState, useServerStore } from '@/src/store/server';
 import LayoutSelector from '@/src/components/LayoutSelector.vue';
 import { valveMode } from '@/src/catstudio/valveMode';
+import { directorMode } from '@/src/catstudio/director/mode';
 
 interface Props {
   hasData: boolean;
@@ -141,6 +142,14 @@ const { count: msgCount, badgeColor: msgBadgeColor } = useMessageBubble();
       name="Valvas (holograma e 3D)"
       data-testid="open-valve-mode"
       @click="valveMode.open = true"
+    />
+    <control-button
+      v-if="hasData"
+      size="40"
+      icon="mdi-movie-open-edit-outline"
+      name="Diretor de arte (peça o corte por texto)"
+      data-testid="open-director-mode"
+      @click="directorMode.open = true"
     />
     <v-spacer />
     <control-button

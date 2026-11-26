@@ -19,7 +19,7 @@ Alterações feitas pelo CatStudio (Apache 2.0, §4b):
       ModulePanel.vue, RenderingModule.vue, SliceViewerOverlay.vue,
       VolumePresets.vue, VolumeProperties.vue, VolumeViewer.vue,
       WelcomePage.vue, tools/windowing/WindowLevelControls.vue,
-      SliceViewer.vue, tools/ResetViews.vue,
+      SliceViewer.vue, tools/ResetViews.vue, App.vue, ControlsStrip.vue,
       vtk/VtkBaseSliceRepresentation.vue,
     src/constants.ts, src/config.ts, src/main.js,
     src/composables/actions.ts,
