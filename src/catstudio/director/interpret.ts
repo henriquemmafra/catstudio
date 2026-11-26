@@ -6,6 +6,8 @@
  */
 import {
   REFERENCES_OF,
+  DEFAULT_DEPTH,
+  DEFAULT_THICKNESS,
   THICKNESS_LIMITS,
   defaultRecipe,
   type PlaneName,
@@ -159,6 +161,8 @@ function findShift(
 }
 
 function findProjection(t: string): Recipe['projecao'] | null {
+  if (/\b3 ?d\b|tridimensional|em volume|volumetric|reconstru/.test(t))
+    return '3d';
   if (/\bminip\b|minima intensidade/.test(t)) return 'minip';
   if (/\bmip\b|maxima intensidade/.test(t)) return 'mip';
   if (/corte fino|(?<!mais )\bfin[oa]\b/.test(t)) return 'fina';
@@ -175,8 +179,9 @@ function findProjection(t: string): Recipe['projecao'] | null {
 function findThickness(t: string): number | null {
   const hit =
     t.match(
-      /(?:espessura|mip|minip|fatia|espess[oa]|media)\D{0,14}?(\d+(?:[.,]\d+)?)\s*(mm|cm)\b/
-    ) ?? t.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm)\s+de\s+espessura/);
+      /(?:espessura|profundidade|mip|minip|fatia|espess[oa]|media)\D{0,14}?(\d+(?:[.,]\d+)?)\s*(mm|cm)\b/
+    ) ??
+    t.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm)\s+de\s+(?:espessura|profundidade)/);
   return hit ? toMm(hit[1], hit[2]) : null;
 }
 
@@ -296,11 +301,29 @@ function relativeThickness(t: string, recipe: Recipe): number | null {
   return null;
 }
 
+/** Espessura ao trocar de projeção sem dizer o número. */
+function defaultThickness(
+  from: Recipe['projecao'],
+  to: Recipe['projecao'],
+  current: number
+): number {
+  if (to === '3d' && from !== '3d') return DEFAULT_DEPTH;
+  if (to !== '3d' && from === '3d') return DEFAULT_THICKNESS;
+  return current;
+}
+
 function applyProjection(draft: Draft) {
   const { t, recipe } = draft;
   const thickness = findThickness(t) ?? relativeThickness(t, recipe);
   const projection = findProjection(t);
-  if (projection) recipe.projecao = projection;
+  if (projection) {
+    recipe.espessura = defaultThickness(
+      recipe.projecao,
+      projection,
+      recipe.espessura
+    );
+    recipe.projecao = projection;
+  }
   if (thickness !== null) {
     recipe.espessura = clampThickness(thickness);
     // só a espessura, num corte fino: vira fatia espessa em média

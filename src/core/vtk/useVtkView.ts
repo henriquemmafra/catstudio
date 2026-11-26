@@ -190,8 +190,13 @@ export function useVtkView(
   const setSize = (width: number, height: number) => {
     // ensure we have a non-zero size, otherwise
     // the framebuffers might not be populated correctly
-    const scaledWidth = Math.max(1, width * globalThis.devicePixelRatio);
-    const scaledHeight = Math.max(1, height * globalThis.devicePixelRatio);
+    // CatStudio: tamanho inteiro. Com largura fracionária (painel de 550,5 px,
+    // ou zoom do Windows em 125%) a seleção de widgets no 3D lê o buffer com
+    // índices quebrados e nunca acha a alça sob o mouse (a caixa de corte
+    // não respondia ao arrasto).
+    const ratio = globalThis.devicePixelRatio;
+    const scaledWidth = Math.max(1, Math.round(width * ratio));
+    const scaledHeight = Math.max(1, Math.round(height * ratio));
     renderWindowView.setSize(scaledWidth, scaledHeight);
     imageRenderer.resetCameraClippingRange(unref(clippingBounds));
 

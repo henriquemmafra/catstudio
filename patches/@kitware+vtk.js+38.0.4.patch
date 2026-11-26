@@ -114,10 +114,19 @@ index ba92841..a59d269 100644
  			gl.clearColor(background[0], background[1], background[2], background[3]);
  			clearMask |= gl.COLOR_BUFFER_BIT;
 diff --git a/node_modules/@kitware/vtk.js/Rendering/OpenGL/VolumeMapper.js b/node_modules/@kitware/vtk.js/Rendering/OpenGL/VolumeMapper.js
-index d15591b..1e706ed 100644
+index d15591b..8ba3423 100644
 --- a/node_modules/@kitware/vtk.js/Rendering/OpenGL/VolumeMapper.js
 +++ b/node_modules/@kitware/vtk.js/Rendering/OpenGL/VolumeMapper.js
-@@ -610,6 +610,14 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
+@@ -84,6 +84,8 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
+ 			model._openGLRenderer = publicAPI.getFirstAncestorOfType("vtkOpenGLRenderer");
+ 			const ren = model._openGLRenderer.getRenderable();
+ 			model.openGLCamera = model._openGLRenderer.getViewNodeFor(ren.getActiveCamera(), model.openGLCamera);
++			// CatStudio: the widget selection pass has nothing to pick in a volume; rendering it there costs a full frame per mouse move and leaves a reduced viewport behind
++			if (model._openGLRenderer.getSelector?.()) return;
+ 			publicAPI.renderPiece(ren, actor);
+ 		}
+ 	};
+@@ -610,6 +612,14 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
  		if (!model._lastScale) model._lastScale = model.renderable.getInitialInteractionScale();
  		model._useSmallViewport = false;
  		if (rwi.isAnimating() && model._lastScale > 1.5) model._useSmallViewport = true;
@@ -132,7 +141,7 @@ index d15591b..1e706ed 100644
  		if (!model._animationRateSubscription) model._animationRateSubscription = rwi.onAnimationFrameRateUpdate(() => {
  			if (model.renderable.getAutoAdjustSampleDistances()) {
  				const frate = rwi.getRecentAnimationFrameRate();
-@@ -621,7 +629,7 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
+@@ -621,7 +631,7 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
  		});
  		if (model._useSmallViewport) {
  			const size = model._openGLRenderWindow.getFramebufferSize();
@@ -141,7 +150,7 @@ index d15591b..1e706ed 100644
  			model._smallViewportWidth = Math.ceil(scaleFactor * size[0]);
  			model._smallViewportHeight = Math.ceil(scaleFactor * size[1]);
  			if (model._smallViewportHeight > size[1]) model._smallViewportHeight = size[1];
-@@ -750,6 +758,8 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
+@@ -750,6 +760,8 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
  		publicAPI.renderPieceStart(ren, actor);
  		publicAPI.renderPieceDraw(ren, actor);
  		publicAPI.renderPieceFinish(ren, actor);
@@ -150,7 +159,7 @@ index d15591b..1e706ed 100644
  	};
  	publicAPI.updateBufferObjects = (ren, actor) => {
  		if (publicAPI.getNeedToRebuildBufferObjects(ren, actor)) publicAPI.buildBufferObjects(ren, actor);
-@@ -868,7 +878,7 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
+@@ -868,7 +880,7 @@ function vtkOpenGLVolumeMapper(publicAPI, model) {
  			const reBuildTex = !tex?.oglObject?.getHandle() || tex?.hash !== scalarsHash;
  			const updatedExtents = volumeProperty.getUpdatedExtents();
  			const hasUpdatedExtents = !!updatedExtents.length;

@@ -83,7 +83,7 @@ describe('diretor: nuvem', () => {
       ...defaultRecipe(),
       plano: 'sagital',
       referencia: 'hemiclavicular-esquerda',
-      espessura: 150,
+      espessura: 300,
     });
     expect(answer.comment).toBe('Corte pelo hemitórax esquerdo.');
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   HEMICLAVICULAR_RATIO,
+  coarseStepFor,
   findLandmarks,
 } from '@/src/catstudio/director/landmarks';
 import {
@@ -34,6 +35,7 @@ import {
   LUNG_EDGE,
   axialPhantom,
   density,
+  pixelOf,
   rotatedPhantom,
 } from './phantom';
 
@@ -140,6 +142,24 @@ describe('diretor: referências anatômicas', () => {
     expect(Math.abs(onTable.midCoronalY)).toBeLessThan(8);
   });
 
+  it('acha os pulmões de um lactente (0,2 litro) e deixa a mesa solta de fora', () => {
+    const scale = 0.4;
+    const infant = findLandmarks(axialPhantom(2, { scale, looseTable: true }));
+    expect(infant.basis).toBe('pulmoes');
+    expect(Math.abs(infant.midlineX)).toBeLessThan(3);
+    expect(Math.abs(infant.halfWidthLeft - LUNG_EDGE * scale)).toBeLessThan(5);
+    expect(Math.abs(infant.apexZ - APEX_Z * scale)).toBeLessThan(6);
+    expect(Math.abs(infant.baseZ - BASE_Z * scale)).toBeLessThan(6);
+    // as costas ficam em y = 44; a mesa, em y = 60 a 66, não entra no corpo
+    expect(infant.body[1][1]).toBeLessThan(50);
+    expect(infant.body[1][1]).toBeGreaterThan(38);
+  });
+
+  it('o passo da grade acompanha o tamanho do exame', () => {
+    // exame de 380 × 260 mm: 260 / 110 ≈ 2,4 mm
+    expect(coarseStepFor(axialPhantom(8))).toBeCloseTo(260 / 110, 1);
+  });
+
   it('pulmão colapsado de um lado não desloca a linha média', () => {
     const collapsed = findLandmarks(axialPhantom(4, { smallRightLung: true }));
     expect(Math.abs(collapsed.midlineX)).toBeLessThan(6);
@@ -194,7 +214,7 @@ describe('diretor: receita', () => {
       plano: 'sagital',
       referencia: 'centro',
       projecao: 'mip',
-      espessura: 150,
+      espessura: 300,
       titulo: 'x'.repeat(120),
     });
     expect(sanitizeRecipe('lixo')).toEqual(defaultRecipe());
@@ -229,12 +249,8 @@ describe('diretor: desenho do corte', () => {
     cut: ReturnType<typeof renderCut>,
     point: [number, number, number]
   ) => {
-    const { frame, image } = cut;
-    const d = point.map((p, a) => p - frame.origin[a]);
-    const dot = (v: number[]) => d[0] * v[0] + d[1] * v[1] + d[2] * v[2];
-    const col = Math.floor(dot(frame.u) / image.pixel);
-    const row = Math.floor(dot(frame.v) / image.pixel);
-    return { col, row, value: image.values[col + image.width * row] };
+    const { col, row, index } = pixelOf(cut, point);
+    return { col, row, value: cut.image.values[index] };
   };
 
   it('sagital pela hérnia: ela aparece, na frente (esquerda da imagem) e embaixo', () => {

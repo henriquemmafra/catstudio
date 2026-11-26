@@ -9,6 +9,7 @@
  *  - "hérnia": esfera de 300 UH, raio 12, em (85, −80, 80): parede anterior
  *    do abdome, do lado esquerdo do paciente
  */
+import type { CutJob } from '@/src/catstudio/director/cut';
 import {
   makeVolume,
   type Vec3,
@@ -27,9 +28,17 @@ export interface PhantomOptions {
   smallRightLung?: boolean;
   /** mesa do tomógrafo atrás das costas, larga e fora de centro */
   table?: boolean;
+  /** tamanho do paciente em relação ao adulto (0,4 ≈ lactente) */
+  scale?: number;
+  /** mesa separada do paciente, 16 mm atrás das costas (com `scale` 0,4) */
+  looseTable?: boolean;
 }
 
-export function density([x, y, z]: Vec3, opt: PhantomOptions = {}): number {
+export function density(point: Vec3, opt: PhantomOptions = {}): number {
+  const scale = opt.scale ?? 1;
+  if (opt.looseTable && point[1] > 60 && point[1] < 66 && point[0] < 110)
+    return 200;
+  const [x, y, z] = point.map((c) => c / scale);
   if (opt.table && y > 112 && y < 126 && x < 110) return 200;
   if (z < 0 || z > 400 || (x / 170) ** 2 + (y / 110) ** 2 > 1) return -1000;
   const sphere = (c: Vec3, r: number) =>
@@ -37,10 +46,10 @@ export function density([x, y, z]: Vec3, opt: PhantomOptions = {}): number {
   if (sphere(HERNIA, 12)) return 300;
   if (sphere([0, -20, 100], 15)) return -900;
   if (!opt.noLungs) {
-    const lung = (cx: number, scale: number) =>
-      ((x - cx) / (55 * scale)) ** 2 +
-        (y / (70 * scale)) ** 2 +
-        ((z - 280) / (100 * scale)) ** 2 <
+    const lung = (cx: number, shrink: number) =>
+      ((x - cx) / (55 * shrink)) ** 2 +
+        (y / (70 * shrink)) ** 2 +
+        ((z - 280) / (100 * shrink)) ** 2 <
       1;
     if (lung(75, 1)) return -850;
     if (lung(-75, opt.smallRightLung ? 0.45 : 1)) return -850;
@@ -109,4 +118,14 @@ export function rotatedPhantom(step = 4): WorldVolume {
     [-step, 0, 0],
     [0, -step, 0],
   ]);
+}
+
+/** Coluna, linha e índice do pixel de um corte onde cai o ponto do paciente. */
+export function pixelOf(cut: CutJob, point: number[]) {
+  const { frame, image } = cut;
+  const d = point.map((p, a) => p - frame.origin[a]);
+  const dot = (v: number[]) => d[0] * v[0] + d[1] * v[1] + d[2] * v[2];
+  const col = Math.floor(dot(frame.u) / image.pixel);
+  const row = Math.floor(dot(frame.v) / image.pixel);
+  return { col, row, index: col + image.width * row };
 }

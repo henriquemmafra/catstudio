@@ -20,18 +20,27 @@ export async function captureViewPNG(view: VtkViewApi, kind = '3d') {
     canvas.toBlob(resolve, 'image/png')
   );
   if (!blob) throw new Error('Falha ao gerar o PNG');
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `catstudio-${kind}-${stamp()}.png`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  await download(blob, `catstudio-${kind}-${stamp()}.png`);
 }
 
-/** Entrega um arquivo gerado no navegador (PNG, vídeo) como download. */
-export function download(blob: Blob, name: string) {
+/**
+ * Entrega um arquivo gerado no navegador (PNG, vídeo) como download. Dentro
+ * do Claude (CatStudio aberto como artefato) o download comum é bloqueado; lá
+ * vale a capacidade "downloads" da página.
+ */
+export async function download(blob: Blob, name: string) {
+  const host = (globalThis as any).claude;
+  if (host && typeof host.use === 'function') {
+    try {
+      const downloads = await host.use('downloads');
+      if (downloads) {
+        await downloads.save({ filename: name, data: blob });
+        return;
+      }
+    } catch {
+      // recusado ou indisponível: tenta o download comum
+    }
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;

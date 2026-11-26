@@ -16,8 +16,28 @@ import {
   type WorldVolume,
 } from '@/src/catstudio/director/volume';
 
-/** Passo da grade grosseira, em mm. */
+/** Passo máximo da grade grosseira, em mm (adulto). */
 export const COARSE_STEP = 4;
+/** Passo mínimo: num lactente a parede torácica tem poucos milímetros. */
+const FINEST_STEP = 1.5;
+/** A grade grosseira não passa deste número de voxels. */
+const MAX_COARSE_VOXELS = 4e6;
+
+/**
+ * Passo da grade conforme o tamanho do exame: fino o bastante para a parede
+ * do tórax de uma criança pequena não "vazar" (um buraco na grade ligaria o
+ * pulmão ao ar de fora), sem passar do limite de voxels.
+ */
+export function coarseStepFor(vol: WorldVolume): number {
+  const [min, max] = bounds(vol);
+  const size = [0, 1, 2].map((a) => max[a] - min[a]);
+  const byWidth = Math.min(size[0], size[1]) / 110;
+  const byCount = Math.cbrt((size[0] * size[1] * size[2]) / MAX_COARSE_VOXELS);
+  return Math.max(
+    byCount,
+    Math.min(COARSE_STEP, Math.max(FINEST_STEP, byWidth))
+  );
+}
 
 /**
  * Onde fica a linha hemiclavicular, como fração da distância entre a linha
@@ -120,44 +140,51 @@ function outsideAir({ n, hu }: Grid): Uint8Array {
   return out;
 }
 
-/** Componentes conexos (6 vizinhos) do ar interno; devolve o rótulo e o tamanho de cada um. */
-function airComponents(grid: Grid, outside: Uint8Array) {
+/**
+ * Componentes conexos (6 vizinhos) dos voxels que passam em `wanted`; devolve
+ * o rótulo de cada voxel (0 = fora) e o tamanho de cada componente.
+ */
+function components(grid: Grid, wanted: (o: number) => boolean) {
   const [nx, ny, nz] = grid.n;
+  const slice = nx * ny;
   const labels = new Int32Array(grid.hu.length);
   const sizes: number[] = [0];
   const stack = new Int32Array(grid.hu.length);
-  const isAir = (o: number) =>
-    !outside[o] && !labels[o] && grid.hu[o] < AIR - 100;
+  let top = 0;
+  const visit = (q: number, label: number) => {
+    if (labels[q] || !wanted(q)) return;
+    labels[q] = label;
+    stack[top] = q;
+    top += 1;
+  };
+  const spread = (o: number, label: number) => {
+    const i = o % nx;
+    const j = Math.floor(o / nx) % ny;
+    const k = Math.floor(o / slice);
+    if (i > 0) visit(o - 1, label);
+    if (i < nx - 1) visit(o + 1, label);
+    if (j > 0) visit(o - nx, label);
+    if (j < ny - 1) visit(o + nx, label);
+    if (k > 0) visit(o - slice, label);
+    if (k < nz - 1) visit(o + slice, label);
+  };
   for (let seed = 0; seed < labels.length; seed++) {
-    if (!isAir(seed)) continue;
     const label = sizes.length;
+    visit(seed, label);
     let size = 0;
-    let top = 0;
-    labels[seed] = label;
-    stack[top++] = seed;
     while (top) {
-      const o = stack[--top];
+      top -= 1;
       size += 1;
-      const i = o % nx;
-      const j = Math.floor(o / nx) % ny;
-      const k = Math.floor(o / (nx * ny));
-      const visit = (q: number) => {
-        if (isAir(q)) {
-          labels[q] = label;
-          stack[top++] = q;
-        }
-      };
-      if (i > 0) visit(o - 1);
-      if (i < nx - 1) visit(o + 1);
-      if (j > 0) visit(o - nx);
-      if (j < ny - 1) visit(o + nx);
-      if (k > 0) visit(o - nx * ny);
-      if (k < nz - 1) visit(o + nx * ny);
+      spread(stack[top], label);
     }
-    sizes.push(size);
+    if (size) sizes.push(size);
   }
   return { labels, sizes };
 }
+
+/** Rótulo do maior componente (0 se não houver nenhum). */
+const largestLabel = (sizes: number[]) =>
+  sizes.reduce((best, size, label) => (size > sizes[best] ? label : best), 0);
 
 const percentile = (sorted: number[], p: number) =>
   sorted.length
@@ -196,31 +223,46 @@ function extent(grid: Grid, keep: (o: number) => boolean, tail = 0.01) {
   };
 }
 
-/** Volume mínimo de ar interno, em litros, para ser tratado como pulmão. */
-const MIN_LUNG_LITERS = 0.5;
+/**
+ * Fração mínima do corpo ocupada por ar interno para ser tratada como pulmão.
+ * É proporção, não litros: vale do lactente ao adulto (num tórax, os pulmões
+ * passam de 10% do volume; gás intestinal num abdome fica bem abaixo de 3%).
+ */
+const MIN_LUNG_FRACTION = 0.03;
 
-export function findLandmarks(vol: WorldVolume, step = COARSE_STEP): Landmarks {
+export function findLandmarks(
+  vol: WorldVolume,
+  step = coarseStepFor(vol)
+): Landmarks {
   const grid = coarseGrid(vol, step);
   const outside = outsideAir(grid);
   const notes: string[] = [];
 
-  const bodyStat = extent(grid, (o) => !outside[o] && grid.hu[o] > -300, 0.001);
+  // o corpo é o maior bloco de tecido; a mesa e os suportes, quando não
+  // encostam no paciente, ficam de fora
+  const tissue = components(grid, (o) => !outside[o] && grid.hu[o] > -300);
+  const patient = largestLabel(tissue.sizes);
+  const isBody = (o: number) => patient > 0 && tissue.labels[o] === patient;
+  const bodyStat = extent(grid, isBody, 0.001);
   const body: [Vec3, Vec3] = [
     [bodyStat.x[0], bodyStat.y[0], bodyStat.z[0]],
     [bodyStat.x[1], bodyStat.y[1], bodyStat.z[1]],
   ];
 
-  const { labels, sizes } = airComponents(grid, outside);
+  const { labels, sizes } = components(
+    grid,
+    (o) => !outside[o] && grid.hu[o] < AIR - 100
+  );
   const largest = Math.max(0, ...sizes);
-  const liters = (voxels: number) => (voxels * step ** 3) / 1e6;
   // os dois pulmões costumam ser os dois maiores bolsões de ar (ou um só,
   // quando a traqueia os une nesta resolução); gás intestinal é bem menor
   const lung = sizes.map(
-    (size) => size > 0 && size >= 0.25 * largest && liters(size) >= 0.15
+    (size) =>
+      size > 0 && size >= 0.25 * largest && size >= 0.005 * bodyStat.count
   );
   const lungStat = extent(grid, (o) => lung[labels[o]], 0.002);
 
-  if (liters(lungStat.count) < MIN_LUNG_LITERS) {
+  if (lungStat.count < MIN_LUNG_FRACTION * bodyStat.count) {
     notes.push(
       'Não achei os pulmões neste exame: as linhas foram estimadas só pelo contorno do corpo e são menos confiáveis.'
     );
@@ -253,8 +295,7 @@ export function findLandmarks(vol: WorldVolume, step = COARSE_STEP): Landmarks {
   const chest = extent(
     grid,
     (o) =>
-      !outside[o] &&
-      grid.hu[o] > -300 &&
+      isBody(o) &&
       yOf(o) <= lungStat.y[1] &&
       zOf(o) >= lungStat.z[0] &&
       zOf(o) <= lungStat.z[1],

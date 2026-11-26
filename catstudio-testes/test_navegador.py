@@ -678,6 +678,17 @@ def test_diretor_de_arte_faz_o_corte_pedido(session):
         return Array.from(c.getContext('2d').getImageData(3, 3, 1, 1).data.slice(0, 3)); }""")
     assert borda == [255, 255, 255]
 
+    # em 3D: a face do corte sai colorida (tecido avermelhado), não em cinza
+    entendi = _ask_director(page, "mas em 3d, fundo preto")
+    assert "reconstrução 3D recortada no plano, 160 mm de profundidade" in entendi
+    cores = page.evaluate("""() => { const c = document.querySelector('[data-testid=director-cut]');
+        const d = c.getContext('2d').getImageData(40, 40, c.width - 80, c.height - 120).data;
+        let red = 0, lit = 0;
+        for (let i = 0; i < d.length; i += 4) { if (d[i] + d[i+1] + d[i+2] > 60) lit++; if (d[i] > d[i+2] + 25) red++; }
+        return { lit: lit / (d.length / 4), red: red / (d.length / 4) }; }""")
+    assert cores["lit"] > 0.3 and cores["red"] > 0.2, cores
+    _ask_director(page, "corte fino, fundo branco")
+
     # pedido sem sentido: avisa e não mexe na imagem
     antes = page.get_by_test_id("director-understood").inner_text()
     _ask_director(page, "faz uma coisa bonita")
@@ -740,7 +751,7 @@ def test_diretor_de_arte_usa_a_ia_quando_a_nuvem_esta_configurada(browser, url):
         assert all(isinstance(v, (int, float, str, list)) for v in corpo["exame"].values())
         assert len(json.dumps(corpo)) < 1500, "só texto e geometria devem sair"
         assert "IA:" in entendi and "Corte coronal na linha axilar média" in entendi
-        assert "MIP de 150 mm" in entendi  # espessura absurda limitada
+        assert "MIP de 300 mm" in entendi  # espessura absurda limitada
         assert "Coronal espesso para ver os dois pulmões." in entendi
         assert _cut_pixels(page)["dark"] < 0.98
 
@@ -752,3 +763,44 @@ def test_diretor_de_arte_usa_a_ia_quando_a_nuvem_esta_configurada(browser, url):
         assert not s.errors, s.errors
     finally:
         s.close()
+
+
+# ------------------------------------------------------------------ caixa de corte do 3D
+
+def test_caixa_de_corte_do_3d_responde_ao_arrasto(session):
+    """Arrastar uma alça da caixa de corte na vista 3D tem de mudar o corte.
+    (Não mudava: o volume era desenhado na passada de seleção dos widgets e
+    apagava as alças do buffer onde o mouse as procura.)"""
+    from PIL import Image
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(3000)
+    page.evaluate(f"() => {PINIA}._s.get('tool').setCurrentTool('Crop')")
+    page.wait_for_timeout(4000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    corte = f"""() => {{ const p = {PINIA}; const id = [...p._s.get('image-cache').imageIds][0];
+        return JSON.parse(JSON.stringify(p._s.get('crop').croppingByImageID[id])); }}"""
+    antes = page.evaluate(corte)
+
+    # as alças são as bolas verdes; pega a mais à esquerda na altura do meio
+    im = np.asarray(Image.open(io.BytesIO(view.screenshot())).convert("RGB")).astype(int)
+    verde = (im[..., 1] > 200) & (im[..., 0] < 90) & (im[..., 2] < 90)
+    ys, xs = np.nonzero(verde)
+    assert len(xs) > 500, "alças da caixa de corte não apareceram"
+    meio = int(np.median(ys))
+    faixa = np.abs(ys - meio) < 6
+    x0 = int(xs[faixa].min()) + 8
+    caixa = view.bounding_box()
+    page.mouse.move(caixa["x"] + x0, caixa["y"] + meio)
+    page.wait_for_timeout(500)
+    page.mouse.down()
+    for k in range(1, 11):
+        page.mouse.move(caixa["x"] + x0 + 12 * k, caixa["y"] + meio)
+        page.wait_for_timeout(120)
+    page.mouse.up()
+    page.wait_for_timeout(2500)
+    depois = page.evaluate(corte)
+    assert depois != antes, (antes, depois)
+    mudou = [eixo for eixo in antes if antes[eixo] != depois[eixo]]
+    assert len(mudou) == 1, mudou  # uma face só
+    assert not session.errors, session.errors

@@ -15,6 +15,11 @@ import {
   askCloud,
   cloudConfig,
 } from '@/src/catstudio/director/cloud';
+import {
+  askClaude,
+  claudeSample,
+  type ClaudeSample,
+} from '@/src/catstudio/director/claude';
 import { drawCut, drawLocator } from '@/src/catstudio/director/compose';
 import {
   lineOnLocator,
@@ -48,9 +53,12 @@ const EXAMPLES = [
   'Sagital na linha hemiclavicular esquerda, partes moles',
   'Coronal na linha axilar média, MIP de 20 mm, janela de pulmão',
   'Axial no ápice pulmonar, janela de pulmão',
+  'Sagital na linha média, em 3D',
 ];
 /** Lado maior do corte, em pixels do exame, antes da ampliação final. */
 const MAX_SIDE = 900;
+/** A reconstrução 3D custa dezenas de amostras por pixel: imagem menor. */
+const MAX_SIDE_3D = 640;
 const LOCATOR_SIDE = 240;
 
 const imageCache = useImageCacheStore();
@@ -71,7 +79,18 @@ const locatorAt = ref<number | null>(null);
 const cutCanvas = ref<HTMLCanvasElement | null>(null);
 const locatorCanvas = ref<HTMLCanvasElement | null>(null);
 const cloud = ref(cloudConfig());
+/** Aberto dentro do Claude: dá para perguntar a ele, sem servidor. */
+const claude = shallowRef<ClaudeSample | null>(null);
+claudeSample().then((sample) => {
+  claude.value = sample;
+});
 let job = 0;
+
+/** Texto de andamento: o 3D demora, então mostra a porcentagem. */
+const progress = (target: Recipe, row: number, cut: CutJob) =>
+  target.projecao === '3d'
+    ? `Reconstruindo em 3D… ${Math.round((100 * row) / cut.image.height)}%`
+    : 'Desenhando…';
 
 const pause = () => new Promise<void>((resolve) => setTimeout(resolve));
 
@@ -114,6 +133,14 @@ watch(
   }
 );
 
+const engine = computed(() => {
+  if (claude.value)
+    return 'IA do Claude (só o texto do pedido sai do computador)';
+  if (cloud.value)
+    return 'IA pela nuvem do CineDeck (só o texto do pedido sai do computador)';
+  return 'Interpretador local (nada sai do computador)';
+});
+
 const understood = computed(() =>
   recipe.value ? describeRecipe(recipe.value, landmarks.value ?? undefined) : ''
 );
@@ -131,7 +158,8 @@ async function render() {
   const mine = job;
   busy.value = 'Desenhando…';
   await pause();
-  const cut = newJob(vol, target, lm, MAX_SIDE);
+  const solid = target.projecao === '3d';
+  const cut = newJob(vol, target, lm, solid ? MAX_SIDE_3D : MAX_SIDE);
   let row = 0;
   while (row < cut.image.height) {
     const start = performance.now();
@@ -140,6 +168,7 @@ async function render() {
       renderRows(cut, row, next);
       row = next;
     }
+    busy.value = progress(target, row, cut);
     await pause();
     if (mine !== job) return;
   }
@@ -188,8 +217,26 @@ function lateralSign() {
   return lateralSignOf(cutPosition(recipe.value, lm), lm.midlineX);
 }
 
+async function fromClaude(request: string, lm: Landmarks) {
+  if (!claude.value) return null;
+  busy.value = 'Perguntando ao Claude…';
+  try {
+    return await askClaude(claude.value, {
+      text: request,
+      current: recipe.value,
+      landmarks: lm,
+    });
+  } catch {
+    notes.value.push('O Claude não respondeu ao pedido.');
+    return null;
+  }
+}
+
 async function fromCloud(request: string, lm: Landmarks) {
-  if (!cloud.value) return null;
+  if (!cloud.value) {
+    if (claude.value) notes.value.push('Usei o interpretador local.');
+    return null;
+  }
   busy.value = 'Perguntando à IA…';
   try {
     return await askCloud(cloud.value, {
@@ -212,7 +259,8 @@ async function submit() {
   if (!request || !lm || busy.value) return;
   notes.value = [...lm.notes];
   comment.value = '';
-  const answer = await fromCloud(request, lm);
+  const answer =
+    (await fromClaude(request, lm)) ?? (await fromCloud(request, lm));
   busy.value = '';
   if (answer) {
     source.value = 'ia';
@@ -295,11 +343,7 @@ function savePng() {
       <v-toolbar density="compact" color="surface">
         <v-toolbar-title>Diretor de arte</v-toolbar-title>
         <span class="text-caption mr-4" data-testid="director-engine">
-          {{
-            cloud
-              ? 'IA pela nuvem do CineDeck (só o texto do pedido sai do computador)'
-              : 'Interpretador local (nada sai do computador)'
-          }}
+          {{ engine }}
         </span>
         <v-btn
           icon="mdi-close"
@@ -355,7 +399,7 @@ function savePng() {
           </div>
           <div v-else class="text-caption mt-3">
             Para ajustar, escreva: “2 cm mais lateral”, “MIP de 20 mm”, “janela
-            de pulmão”, “fundo branco”, “só o tórax”.
+            de pulmão”, “fundo branco”, “só o tórax”, “em 3D”.
           </div>
           <div
             v-if="understood"

@@ -52,7 +52,10 @@ ajusta e sem usar a placa de vídeo:
 - **O que ele entende**: plano (axial, coronal, sagital); onde cortar (linha
   média, hemiclavicular e paraesternal direita/esquerda, axilar média, ápice
   e base pulmonar, centro); corte fino, MIP, MinIP ou média com espessura em
-  mm; janela (partes moles, mediastino, pulmão, osso, abdome, angio,
+  mm; **"em 3D"**: reconstrução 3D recortada no plano (o observador olha
+  para a face do corte, colorida pelo tecido, e através do ar vê o relevo do
+  que está atrás; "profundidade de 8 cm" limita até onde se vê; "janela de
+  osso" mostra só o esqueleto e "janela angio" destaca vasos com contraste); janela (partes moles, mediastino, pulmão, osso, abdome, angio,
   cérebro); "só o tórax" / "só o abdome"; fundo branco, preto ou cinza.
 - **Ajustes por texto** sobre a imagem feita: "2 cm mais lateral", "um pouco
   mais medial", "MIP de 20 mm", "mais espesso", "janela de pulmão", "fundo
@@ -65,7 +68,8 @@ ajusta e sem usar a placa de vídeo:
   a legenda do que foi pedido.
 
 As linhas de superfície são **estimadas**, não medidas: o programa acha os
-pulmões pela densidade (ar dentro do corpo), tira deles a linha média e a
+pulmões pela densidade (ar dentro do corpo; o critério é a proporção do
+corpo, não litros, para valer do lactente ao adulto), tira deles a linha média e a
 largura de cada hemitórax, e põe a hemiclavicular a 65% do caminho entre a
 linha média e a borda lateral do pulmão (proporção anatômica média), e a
 paraesternal a 2,5 cm da linha média. A tela avisa quando a linha é
@@ -83,8 +87,11 @@ receita que volta é conferida campo a campo antes de usar. Sem nuvem, ou se
 ela falhar, roda o interpretador local (vocabulário acima), que não envia
 nada. A barra do diretor mostra qual dos dois está em uso.
 
-Não faz nesta versão: reconstrução 3D recortada no plano, cortes oblíquos,
-achar a lesão sozinho (a IA não vê a imagem) e medir a clavícula de fato
+Dentro do Claude (o CatStudio aberto como artefato), o diretor pergunta ao
+próprio Claude, sem servidor nem chave, mandando as mesmas coisas.
+
+Não faz nesta versão: cortes oblíquos, girar a reconstrução 3D (ela é vista
+de frente para o plano), achar a lesão sozinho (a IA não vê a imagem) e medir a clavícula de fato
 (para isso seria preciso segmentação, por exemplo o TotalSegmentator).
 
 ### Atalhos de leitura
@@ -136,6 +143,12 @@ valem para as três vistas 2D. Em relação ao VolView, mudaram: a régua
   responder. Detalhes em `src/catstudio/renderGuard.ts`.
 - **MIP/MinIP em espessura e atalhos de leitura** nas vistas 2D (tabela
   acima); a projeção é feita na placa de vídeo sobre o volume original.
+- **Caixa de corte do 3D**: arrastar as alças não mudava o corte. O volume
+  era desenhado também na passada em que o vtk.js procura qual alça está sob
+  o mouse, e apagava as alças desse buffer; agora o volume fica fora dessa
+  passada (patch do vtk.js), o que também evita um quadro 3D inteiro a cada
+  movimento do mouse com a ferramenta ligada. O tamanho das vistas passou a
+  ser arredondado para pixels inteiros.
 - **Privacidade**: nome, ID e nascimento do paciente nunca aparecem (viram
   "Paciente 1"); sem telemetria, dados de exemplo ou serviços remotos; o
   teste automatizado falha se a página fizer qualquer requisição externa.
@@ -146,7 +159,7 @@ valem para as três vistas 2D. Em relação ao VolView, mudaram: a régua
 
 Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
 
-- **31 testes ponta a ponta no navegador** (`catstudio-testes/`): upload
+- **32 testes ponta a ponta no navegador** (`catstudio-testes/`): upload
   real pelos seletores de arquivo e de pasta, volume lido da aplicação e
   comparado voxel a voxel com um fantoma analítico — axial com pixel
   anisotrópico, implicit VR com sinal, aquisição coronal, oblíqua dupla,
@@ -175,10 +188,10 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   ordem; liberação de memória) dentro da suíte completa do projeto (2460
   passam; 1 falha só porque baixa um arquivo de data.kitware.com, sem
   acesso à internet no ambiente de teste).
-- **Diretor de arte**: 52 testes unitários (geometria no espaço do paciente
+- **Diretor de arte**: 71 testes unitários (geometria no espaço do paciente
   em duas orientações de aquisição, referências anatômicas num fantoma de
   tronco, inclusive com pulmão colapsado, mesa do tomógrafo fora de centro e
-  exame sem pulmões; desenho do corte, MIP/MinIP/média, localizador;
+  exame sem pulmões, lactente com a mesa solta; desenho do corte, reconstrução 3D, MIP/MinIP/média, localizador;
   interpretador de pedidos; cliente da nuvem) e 2 testes no navegador (o
   pedido de exemplo, ajustes, clique no localizador, PNG; e o caminho da IA
   com um servidor simulado). **Não testado com exame real**: a estimativa

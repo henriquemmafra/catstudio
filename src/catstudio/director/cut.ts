@@ -11,6 +11,11 @@ import {
   type Recipe,
 } from '@/src/catstudio/director/recipe';
 import {
+  scene3D,
+  styleForWindow,
+  type Scene3D,
+} from '@/src/catstudio/director/render3d';
+import {
   sample,
   type Vec3,
   type WorldVolume,
@@ -97,6 +102,8 @@ export interface CutImage {
   pixel: number;
   /** densidade (UH) de cada pixel */
   values: Float32Array;
+  /** imagem já colorida (reconstrução 3D); sem ela, vale `values` + janela */
+  rgba?: Uint8ClampedArray;
 }
 
 /** Maior número de amostras ao longo da espessura. */
@@ -117,7 +124,7 @@ export function imageSize(frame: Frame, vol: WorldVolume, maxSide: number) {
 
 /** Deslocamentos (mm) das amostras ao longo da espessura, centrados no corte. */
 export function slabOffsets(recipe: Recipe, vol: WorldVolume): number[] {
-  if (recipe.projecao === 'fina') return [0];
+  if (recipe.projecao === 'fina' || recipe.projecao === '3d') return [0];
   const count = Math.min(
     MAX_STEPS,
     Math.max(2, Math.round(recipe.espessura / vol.minSpacing) + 1)
@@ -162,7 +169,15 @@ export interface CutJob {
   frame: Frame;
   image: CutImage;
   project: Projector;
+  /** reconstrução 3D: pinta o pixel direto na imagem colorida */
+  paint?: Scene3D['paint'];
 }
+
+const hexToRgb = (hex: string): [number, number, number] => [
+  parseInt(hex.slice(1, 3), 16),
+  parseInt(hex.slice(3, 5), 16),
+  parseInt(hex.slice(5, 7), 16),
+];
 
 export function newJob(
   vol: WorldVolume,
@@ -172,11 +187,21 @@ export function newJob(
 ): CutJob {
   const frame = frameOf(recipe, lm);
   const size = imageSize(frame, vol, maxSide);
-  return {
-    frame,
-    image: { ...size, values: new Float32Array(size.width * size.height) },
-    project: projector(vol, frame, recipe),
+  const image: CutImage = {
+    ...size,
+    values: new Float32Array(size.width * size.height),
   };
+  const job: CutJob = { frame, image, project: projector(vol, frame, recipe) };
+  if (recipe.projecao === '3d') {
+    const scene = scene3D(vol, frame, size, {
+      style: styleForWindow(recipe.janela),
+      depth: recipe.espessura,
+      background: hexToRgb(recipe.fundo),
+    });
+    image.rgba = scene.rgba;
+    job.paint = scene.paint;
+  }
+  return job;
 }
 
 /**
@@ -193,11 +218,11 @@ export function renderRows(job: CutJob, fromRow: number, toRow: number) {
     const rz = origin[2] + v[2] * py;
     for (let col = 0; col < width; col++) {
       const px = (col + 0.5) * pixel;
-      values[col + width * row] = job.project(
-        rx + u[0] * px,
-        ry + u[1] * px,
-        rz + u[2] * px
-      );
+      const x = rx + u[0] * px;
+      const y = ry + u[1] * px;
+      const z = rz + u[2] * px;
+      if (job.paint) job.paint(col + width * row, x, y, z);
+      else values[col + width * row] = job.project(x, y, z);
     }
   }
 }
@@ -214,8 +239,9 @@ export function renderCut(
   return job;
 }
 
-/** Aplica a janela: densidades → tons de cinza (RGBA). */
+/** A imagem em RGBA: a reconstrução 3D como está; os cortes, com a janela. */
 export function toGray(image: CutImage, recipe: Recipe): Uint8ClampedArray {
+  if (image.rgba) return image.rgba;
   const [windowWidth, level] = WINDOWS[recipe.janela];
   const low = level - windowWidth / 2;
   const rgba = new Uint8ClampedArray(4 * image.values.length);
@@ -277,6 +303,7 @@ export function locatorRecipe(target: Recipe, lm: Landmarks): Recipe {
     ponto: axial ? lm.center[2] : lm.midCoronalY,
     deslocamento: 0,
     projecao: 'fina',
+    janela: target.projecao === '3d' ? 'partes-moles' : target.janela,
     campo: 'tudo',
   };
 }

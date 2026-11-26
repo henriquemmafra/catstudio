@@ -41,7 +41,7 @@ export const REFERENCES_OF: Record<PlaneName, readonly Reference[]> = {
   axial: ['centro', 'apice-pulmonar', 'base-pulmonar', 'ponto'],
 };
 
-export const PROJECTIONS = ['fina', 'mip', 'minip', 'media'] as const;
+export const PROJECTIONS = ['fina', 'mip', 'minip', 'media', '3d'] as const;
 export type Projection = (typeof PROJECTIONS)[number];
 
 export const FIELDS = ['tudo', 'torax', 'abdome'] as const;
@@ -81,7 +81,10 @@ export interface Recipe {
   /** Com referência "ponto": posição no eixo do corte, em mm (LPS). */
   ponto: number;
   projecao: Projection;
-  /** Espessura da fatia, em mm (ignorada no corte fino). */
+  /**
+   * Espessura da fatia, em mm (ignorada no corte fino). Na reconstrução 3D é
+   * a profundidade: até onde se vê para dentro do plano.
+   */
   espessura: number;
   janela: WindowName;
   campo: Field;
@@ -90,7 +93,11 @@ export interface Recipe {
   titulo: string;
 }
 
-export const THICKNESS_LIMITS = [1, 150] as const;
+export const THICKNESS_LIMITS = [1, 300] as const;
+/** Profundidade inicial da reconstrução 3D, em mm. */
+export const DEFAULT_DEPTH = 160;
+/** Espessura inicial de uma fatia espessa, em mm. */
+export const DEFAULT_THICKNESS = 10;
 
 export const defaultRecipe = (): Recipe => ({
   plano: 'axial',
@@ -98,7 +105,7 @@ export const defaultRecipe = (): Recipe => ({
   deslocamento: 0,
   ponto: 0,
   projecao: 'fina',
-  espessura: 10,
+  espessura: DEFAULT_THICKNESS,
   janela: 'partes-moles',
   campo: 'tudo',
   fundo: '#000000',
@@ -216,6 +223,25 @@ const SHIFT_WORDS: Record<PlaneName, [string, string]> = {
   axial: ['acima', 'abaixo'],
 };
 
+const STYLE_BY_WINDOW: Partial<Record<WindowName, string>> = {
+  osso: 'só osso',
+  angio: 'vasos em destaque',
+};
+
+/** Projeção e janela (ou, no 3D, profundidade e estilo de cor), em palavras. */
+function lookParts(recipe: Recipe): string[] {
+  if (recipe.projecao === '3d')
+    return [
+      `reconstrução 3D recortada no plano, ${mm(recipe.espessura)} de profundidade`,
+      `cores: ${STYLE_BY_WINDOW[recipe.janela] ?? 'tecidos'}`,
+    ];
+  const projection =
+    recipe.projecao === 'fina'
+      ? 'corte fino'
+      : `${{ mip: 'MIP', minip: 'MinIP', media: 'média' }[recipe.projecao]} de ${mm(recipe.espessura)}`;
+  return [projection, `janela de ${WINDOW_LABEL[recipe.janela]}`];
+}
+
 /** O que o diretor entendeu, em uma linha, para o usuário conferir. */
 export function describeRecipe(recipe: Recipe, lm?: Landmarks): string {
   const parts = [`Corte ${recipe.plano} ${REFERENCE_LABEL[recipe.referencia]}`];
@@ -231,12 +257,7 @@ export function describeRecipe(recipe: Recipe, lm?: Landmarks): string {
       `${mm(recipe.deslocamento)} ${recipe.deslocamento > 0 ? plus : minus}`
     );
   }
-  parts.push(
-    recipe.projecao === 'fina'
-      ? 'corte fino'
-      : `${{ mip: 'MIP', minip: 'MinIP', media: 'média' }[recipe.projecao]} de ${mm(recipe.espessura)}`
-  );
-  parts.push(`janela de ${WINDOW_LABEL[recipe.janela]}`);
+  parts.push(...lookParts(recipe));
   if (recipe.campo !== 'tudo')
     parts.push(recipe.campo === 'torax' ? 'só o tórax' : 'só o abdome');
   return parts.join(' · ');
