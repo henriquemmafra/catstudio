@@ -11,6 +11,12 @@ import { useSegmentStore } from '@/src/segmentation/segments';
 import { usePaintToolStore } from '../store/tools/paint';
 import { PaintMode } from '../core/tools/paint';
 import { computeEffectiveView } from '../core/views/effectiveView';
+import {
+  applyWindowPreset,
+  resetAllViews,
+  toggleSlabOnActiveView,
+} from '../catstudio/shortcuts';
+import { perWindowShortcut } from '../constants';
 
 // One registry holds the segments every tool draws into, so cycling it is not
 // scoped to a tool: paint takes the selection the same way a polygon does.
@@ -116,4 +122,10 @@ export const ACTION_TO_FUNC = {
   mergeNewPolygon: NOOP, // acts as a modifier key rather than immediate effect, so no-op
 
   showKeyboardShortcuts,
+
+  // CatStudio
+  ...perWindowShortcut((index) => () => applyWindowPreset(index)),
+  slabMip: () => toggleSlabOnActiveView('max'),
+  slabMinIp: () => toggleSlabOnActiveView('min'),
+  resetViews: resetAllViews,
 } as const satisfies Record<Action, () => void>;

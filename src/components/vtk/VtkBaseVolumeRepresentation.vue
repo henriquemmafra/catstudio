@@ -42,6 +42,7 @@ import {
   type ChunkLoadedInfo,
 } from '@/src/core/streaming/chunkImage';
 import type vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
+import { useRenderGuard } from '@/src/catstudio/useRenderGuard';
 import {
   isReduced,
   limitCvr,
@@ -232,6 +233,26 @@ watchEffect(() => {
   });
 
   view.requestRender();
+});
+
+// CatStudio: nenhum quadro parado sai em resolução total sem ter o custo
+// medido (ver renderGuard.ts)
+useRenderGuard(view, {
+  viewID: () => viewID.value,
+  mapper: rep.mapper,
+  watched: () => [
+    rep.mapper,
+    rep.actor,
+    ...rep.actor.getProperties(),
+    cfun,
+    ofun,
+    view.renderer,
+    view.renderer.getActiveCamera(),
+    ...view.renderer.getLights(),
+    ...rep.mapper.getClippingPlanes(),
+    renderImage.value,
+    renderImage.value?.getPointData().getScalars(),
+  ],
 });
 
 // apply coloring
