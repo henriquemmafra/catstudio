@@ -150,22 +150,24 @@ function push(queue: Queue, value: number) {
   queue.length += 1;
 }
 
-interface Fill {
+export interface Fill {
   grid: Grid;
   threshold: number;
   visited: Uint8Array;
   queue: Queue;
+  /** voxels por onde a estrutura não passa (em geral, os escondidos) */
+  blocked: Uint8Array;
 }
 
 function visit(fill: Fill, index: number) {
   const { grid, visited } = fill;
-  if (visited[index] || grid.hidden[index]) return;
+  if (visited[index] || fill.blocked[index]) return;
   if (grid.scalars[index] < fill.threshold) return;
   visited[index] = 1;
   push(fill.queue, index);
 }
 
-function visitNeighbours(fill: Fill, index: number) {
+export function visitNeighbours(fill: Fill, index: number) {
   const [nx, ny, nz] = fill.grid.dims;
   const slice = nx * ny;
   const i = index % nx;
@@ -183,7 +185,7 @@ function visitNeighbours(fill: Fill, index: number) {
  * Enche `fill.queue` com a estrutura ligada (6 vizinhos) que contém `seed`:
  * voxels visíveis com valor ≥ limiar. Devolve o tamanho em voxels.
  */
-function flood(fill: Fill, seed: number): number {
+export function flood(fill: Fill, seed: number): number {
   fill.queue.length = 0;
   visit(fill, seed);
   for (let head = 0; head < fill.queue.length; head++)
@@ -191,12 +193,20 @@ function flood(fill: Fill, seed: number): number {
   return fill.queue.length;
 }
 
-const newFill = (grid: Grid, threshold: number): Fill => ({
+export const newFill = (grid: Grid, threshold: number): Fill => ({
   grid,
   threshold,
   visited: new Uint8Array(grid.hidden.length),
   queue: newQueue(),
+  blocked: grid.hidden,
 });
+
+/** Semeia a fila sem enchê-la (para crescer aos poucos). */
+export function seedFill(fill: Fill, seed: number): number {
+  fill.queue.length = 0;
+  visit(fill, seed);
+  return fill.queue.length;
+}
 
 /** Esconde a estrutura ligada ao voxel `seed`. Devolve o tamanho dela. */
 export function removeStructure(

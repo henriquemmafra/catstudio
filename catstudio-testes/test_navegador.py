@@ -323,7 +323,8 @@ def test_renderizacao_3d_e_exportacao_png(session, tmp_path):
     std, _ = _image_std(view.screenshot())
     assert std > 5, "vista 3D vazia"
     with page.expect_download() as dl:
-        page.get_by_test_id("export-3d-png").first.click()
+        page.get_by_test_id("export-3d-menu").first.click()
+        page.get_by_test_id("export-3d-1x").click()
     d = dl.value
     assert d.suggested_filename.startswith("catstudio-3d-") and d.suggested_filename.endswith(".png")
     path = tmp_path / d.suggested_filename
@@ -924,4 +925,93 @@ def test_botao_tela_inicial_fecha_o_exame(session):
     session.open_files(files_of("ax_main"))
     page.wait_for_timeout(4000)
     assert page.get_by_test_id("vtk-view vtk-volume-view").count() == 1
+    assert not session.errors, session.errors
+
+
+def test_osso_translucido_escondido_e_crescer_segurando(session):
+    """Detectar osso, deixá-lo translúcido e escondê-lo; e a ferramenta de
+    crescer enquanto o botão fica apertado. (No fantoma, a "estrutura
+    heterogênea" que a heurística chama de osso é a esfera da direita.)"""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    page.get_by_test_id("open-sculpt").click()
+    inteiro = _sculpt_shot(page, view)
+    meio = inteiro.shape[1] // 2
+    esfera = lambda im, corte: int((im[60:-60, meio + 40:] > corte).sum())
+    assert esfera(inteiro, 60) > 200
+
+    page.get_by_test_id("sculpt-bone-detect").click()
+    page.wait_for_timeout(2500)
+    assert "Osso: 1 estrutura" in _sculpt_status(page), _sculpt_status(page)
+    page.get_by_test_id("sculpt-bone-opacity").fill("30")
+    translucido = _sculpt_shot(page, view)
+    assert esfera(translucido, 60) < 0.5 * esfera(inteiro, 60)   # mais fraca…
+    assert esfera(translucido, 25) > 0.6 * esfera(inteiro, 25)   # …mas ainda lá
+    page.get_by_test_id("sculpt-bone-toggle").click()
+    assert page.get_by_test_id("sculpt-bone-label").inner_text() == "escondido"
+    escondido = _sculpt_shot(page, view)
+    assert esfera(escondido, 25) == 0
+    esquerda = slice(0, meio - 6)
+    resto = lambda im: int((im[60:-60, esquerda] > 60).sum())
+    assert resto(escondido) > 0.9 * resto(inteiro)                # o resto fica
+    page.get_by_test_id("sculpt-bone-forget").click()
+    assert esfera(_sculpt_shot(page, view), 60) > 0.9 * esfera(inteiro, 60)
+
+    # crescer: segura em cima do cilindro; sobra só o pedaço que cresceu
+    caixa = view.bounding_box()
+    page.get_by_test_id("sculpt-grow-keep").click()
+    page.mouse.move(caixa["x"] + caixa["width"] / 2, caixa["y"] + caixa["height"] * 0.3)
+    page.mouse.down()
+    page.wait_for_timeout(1200)
+    assert "Crescendo" in _sculpt_status(page), _sculpt_status(page)
+    page.mouse.up()
+    page.wait_for_timeout(500)
+    assert "Ficou só o que cresceu" in _sculpt_status(page), _sculpt_status(page)
+    cresceu = _sculpt_shot(page, view)
+    claros = int((cresceu[60:-60] > 60).sum())
+    assert 0 < claros < 0.6 * int((inteiro[60:-60] > 60).sum())
+    assert esfera(cresceu, 25) == 0
+    page.get_by_test_id("sculpt-undo").click()
+    assert esfera(_sculpt_shot(page, view), 60) > 0.9 * esfera(inteiro, 60)
+    assert not session.errors, session.errors
+
+
+def test_presets_de_luz_fundo_e_exportacao_em_alta(session, tmp_path):
+    from PIL import Image
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    padrao = _gray_3d(page, view)
+    page.get_by_text("RENDERIZAÇÃO").first.click()
+    page.get_by_text("Iluminação e fundo").first.click()
+    page.get_by_test_id("light-preset-dramatico").click()
+    dramatico = _gray_3d(page, view)
+    miolo = (slice(60, -60), slice(40, -40))
+    mudou = np.abs(dramatico[miolo] - padrao[miolo]).mean()
+    assert mudou > 0.5
+    # "igual ao padrão" com folga: no vídeo por software a trava do 3D pode
+    # fechar o quadro num degrau de resolução diferente a cada vez
+    igual = lambda im: np.abs(im[miolo] - padrao[miolo]).mean() < 0.6 * mudou
+    page.get_by_test_id("light-background-ffffff").click()
+    branco = _gray_3d(page, view)
+    assert branco[100, 40] > 240 and padrao[100, 40] < 15
+    page.get_by_test_id("light-preset-padrao").click()
+    page.get_by_test_id("light-background-000000").click()
+    de_volta = _gray_3d(page, view)
+    assert igual(de_volta)
+
+    caixa = view.bounding_box()
+    with page.expect_download(timeout=120000) as dl:
+        page.get_by_test_id("export-3d-menu").first.click()
+        page.get_by_test_id("export-3d-2x").click()
+    arquivo = tmp_path / dl.value.suggested_filename
+    dl.value.save_as(arquivo)
+    largura, altura = Image.open(arquivo).size
+    assert abs(largura - 2 * caixa["width"]) <= 4 and abs(altura - 2 * caixa["height"]) <= 4
+    # e a vista volta ao tamanho normal depois
+    page.wait_for_timeout(2500)
+    assert igual(_gray_3d(page, view))
     assert not session.errors, session.errors

@@ -43,8 +43,14 @@ import {
 } from '@/src/core/streaming/chunkImage';
 import type vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
 import { useRenderGuard } from '@/src/catstudio/useRenderGuard';
+import {
+  applyBackground,
+  applyLightLook,
+  lightLook,
+  resetLight,
+} from '@/src/catstudio/lightLook';
 import { useSculptedImage } from '@/src/catstudio/sculpt/useSculptedImage';
-import { sculptVersions } from '@/src/catstudio/sculpt/state';
+import { boneViews, sculptVersions } from '@/src/catstudio/sculpt/state';
 import {
   isReduced,
   limitCvr,
@@ -181,6 +187,7 @@ const center = computed(() =>
   vtkBoundingBox.getCenter(imageMetadata.value.worldBounds)
 );
 const isAnimating = isViewAnimating(view);
+let lightWasMoved = false;
 
 watchEffect(() => {
   const img = renderImage.value;
@@ -203,6 +210,10 @@ watchEffect(() => {
 
   const enabled = cvrEnabled && !isAnimating.value && !isImageStreaming.value;
   const dataArray = img.getPointData().getScalars();
+
+  // CatStudio: saindo de um preset de luz, a luz volta para a câmera
+  if (lightLook.preset === 'padrao' && lightWasMoved) resetLight(view.renderer);
+  lightWasMoved = lightLook.preset !== 'padrao';
 
   setCinematicLighting({
     enabled,
@@ -244,6 +255,33 @@ watchEffect(() => {
     property,
   });
 
+  // CatStudio: preset de iluminação e cor do fundo por cima do que o modo
+  // cinematográfico acabou de ajustar
+  applyLightLook(view.renderer, property, lightLook);
+  applyBackground(view.renderer, lightLook);
+
+  view.requestRender();
+});
+
+// CatStudio: osso translúcido. O volume vem com dois componentes (resto e
+// osso); o segundo usa as mesmas curvas, com peso igual à opacidade do osso.
+watchEffect(() => {
+  const img = renderImage.value;
+  if (!img) return;
+  const { property } = rep;
+  const split = img.getPointData().getScalars().getNumberOfComponents() === 2;
+  property.setIndependentComponents(split);
+  if (split) {
+    const id = imageID.value;
+    property.setRGBTransferFunction(1, cfun);
+    property.setScalarOpacity(1, ofun);
+    property.setScalarOpacityUnitDistance(
+      1,
+      property.getScalarOpacityUnitDistance(0)
+    );
+    property.setComponentWeight(0, 1);
+    property.setComponentWeight(1, (id && boneViews[id]?.opacity) || 0);
+  }
   view.requestRender();
 });
 

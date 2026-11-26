@@ -49,26 +49,41 @@
                 Recentralizar câmera
               </v-tooltip>
             </v-btn>
-            <v-btn
-              class="pointer-events-all"
-              color="white"
-              icon
-              size="medium"
-              variant="text"
-              data-testid="export-3d-png"
-              @click="exportPNG"
-            >
-              <v-icon size="medium" class="py-1 view-control-icon">
-                mdi-image-move
-              </v-icon>
-              <v-tooltip
-                location="right"
-                activator="parent"
-                transition="slide-x-transition"
-              >
-                Exportar imagem (PNG, sem textos nem dados do paciente)
-              </v-tooltip>
-            </v-btn>
+            <v-menu location="bottom start">
+              <template #activator="{ props: menu }">
+                <v-btn
+                  v-bind="menu"
+                  class="pointer-events-all"
+                  color="white"
+                  icon
+                  size="medium"
+                  variant="text"
+                  :loading="exporting"
+                  data-testid="export-3d-menu"
+                >
+                  <v-icon size="medium" class="py-1 view-control-icon">
+                    mdi-image-move
+                  </v-icon>
+                  <v-tooltip
+                    location="right"
+                    activator="parent"
+                    transition="slide-x-transition"
+                  >
+                    Exportar imagem (PNG, sem textos nem dados do paciente)
+                  </v-tooltip>
+                </v-btn>
+              </template>
+              <v-list density="compact">
+                <v-list-item
+                  v-for="option in EXPORT_OPTIONS"
+                  :key="option.scale"
+                  :title="option.title"
+                  :subtitle="option.subtitle"
+                  :data-testid="`export-3d-${option.scale}x`"
+                  @click="exportPNG(option.scale)"
+                />
+              </v-list>
+            </v-menu>
             <v-btn
               class="pointer-events-all"
               :color="sculptOpen ? 'primary' : 'white'"
@@ -144,7 +159,7 @@ import { useResetViewsEvents } from '@/src/components/tools/ResetViews.vue';
 import { onVTKEvent } from '@/src/composables/onVTKEvent';
 import { useViewStore } from '@/src/store/views';
 import ViewTypeSwitcher from '@/src/components/ViewTypeSwitcher.vue';
-import { captureViewPNG } from '@/src/catstudio/capture';
+import { captureViewHiRes, captureViewPNG } from '@/src/catstudio/capture';
 import { guardStatus } from '@/src/catstudio/renderGuard';
 import SculptPanel from '@/src/catstudio/components/SculptPanel.vue';
 
@@ -182,8 +197,35 @@ function resetCamera() {
 useResetViewsEvents().onClick(resetCamera);
 
 // CatStudio: exportar a vista 3D como PNG
-function exportPNG() {
-  if (vtkView.value) captureViewPNG(vtkView.value, '3d');
+const EXPORT_OPTIONS = [
+  { scale: 1, title: 'Como está na tela', subtitle: 'Na hora' },
+  { scale: 2, title: '2× (slide)', subtitle: 'Redesenha maior' },
+  { scale: 4, title: '4× (pôster)', subtitle: 'Até 4096 px; demora mais' },
+];
+const exporting = ref(false);
+
+/** Espera a trava do 3D terminar de refinar (ou desistir de esperar). */
+async function settled() {
+  const pause = (ms: number) =>
+    new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  await pause(500);
+  for (let waited = 0; waited < 40_000 && guard.value.refining; waited += 200)
+    await pause(200);
+  await pause(300);
+}
+
+async function exportPNG(scale = 1) {
+  const view = vtkView.value;
+  if (!view || exporting.value) return;
+  exporting.value = true;
+  try {
+    if (scale === 1) await captureViewPNG(view, '3d');
+    else await captureViewHiRes(view, { scale, settle: settled });
+  } finally {
+    exporting.value = false;
+  }
 }
 
 // CatStudio: aviso da trava de segurança (resolução reduzida / refinando)

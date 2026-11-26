@@ -55,12 +55,35 @@ uma cópia em que o que foi apagado vira ar.
   escolhido (a "poeira").
 - **Densidade mínima** — o que conta como estrutura; começa no ponto em que o
   preset atual passa a mostrar alguma coisa.
+- **Crescer: manter / apagar** — aperte e segure em cima de um vaso: a seleção
+  avança ao longo dele enquanto o botão fica apertado (o volume aparece no
+  painel). Solte para parar; o gesto inteiro vale um desfazer.
+- **Detectar osso** — marca as estruturas densas e heterogêneas (cortical +
+  medular). Depois, o controle **Osso** vai de escondido a normal, passando
+  por translúcido. **Osso sim/não** corrige no clique o que a detecção errou.
 - **Desfazer** (12 níveis) e **Restaurar tudo**.
+
+A detecção de osso é uma heurística, não uma segmentação validada: vaso
+contrastado encostado em osso sai junto, osso muito pouco denso pode ficar de
+fora, e ela só foi testada em fantoma. Osso translúcido dobra o que a placa de
+vídeo carrega (dois componentes por voxel); escondido e normal não custam nada.
 
 Limites: a escultura é feita no volume que o 3D desenha (reduzido nos modos
 Leve e Equilibrado) e recomeça se o modo de desempenho mudar; estruturas que se
 tocam (osso encostado em vaso contrastado) saem juntas no clique — separe antes
 com o laço; ainda não entra na sessão salva.
+
+### Iluminação, fundo e exportação em alta
+
+- **Renderização → Iluminação e fundo**: presets Estúdio, Dramático, Suave e
+  Brilho, com direção, altura e intensidade da luz, e a cor do fundo (preto,
+  azul-escuro, cinza, branco ou qualquer outra). Funcionam em qualquer modo de
+  desempenho, porque mudam só a luz e o material. "Padrão" devolve a luz da
+  câmera.
+- **Exportar** (ícone na vista 3D): como está na tela, 2× (slide) ou 4×
+  (pôster, até 4096 px no maior lado). A vista é redesenhada maior, capturada
+  e volta ao normal. A trava do 3D continua valendo: em placa fraca o quadro
+  grande pode sair com resolução interna reduzida em vez de travar.
 
 ### Tela inicial e vistas pretas
 
@@ -218,11 +241,14 @@ Tudo abaixo foi executado (Linux, Chrome headless com WebGL por software):
   ordem; liberação de memória) dentro da suíte completa do projeto (2460
   passam; 1 falha só porque baixa um arquivo de data.kitware.com, sem
   acesso à internet no ambiente de teste).
-- **Esculpir o 3D, vistas pretas e tela inicial**: 21 testes unitários (laço,
-  estrutura ligada, fragmentos, clique com caixa de corte, desfazer,
-  recuperação do contexto de vídeo) e 3 testes no navegador (laço, clique,
-  giro e desfazer na vista 3D; vistas que voltam depois da perda do contexto
-  WebGL; botão da tela inicial).
+- **Esculpir o 3D, osso, luz, vistas pretas e tela inicial**: 35 testes
+  unitários (laço, estrutura ligada, fragmentos, clique com caixa de corte,
+  crescer por camadas, detecção e correção de osso, volume de dois
+  componentes, desfazer, presets de luz, limite da exportação, recuperação do
+  contexto de vídeo) e 5 testes no navegador (laço, clique, giro e desfazer;
+  osso translúcido e escondido e crescer segurando; presets de luz, fundo e
+  exportação 2×; vistas que voltam depois da perda do contexto WebGL; botão
+  da tela inicial).
 - **Diretor de arte**: 71 testes unitários (geometria no espaço do paciente
   em duas orientações de aquisição, referências anatômicas num fantoma de
   tronco, inclusive com pulmão colapsado, mesa do tomógrafo fora de centro e

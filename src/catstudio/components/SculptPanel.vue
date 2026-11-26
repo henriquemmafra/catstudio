@@ -16,14 +16,23 @@ import {
 } from '@/src/catstudio/sculpt/state';
 import { baseImageOf } from '@/src/catstudio/sculpt/useSculptedImage';
 import {
+  type GrowStroke,
   type SculptTarget,
+  findBone,
+  flipBone,
   fragments,
   lasso,
   pick,
   presetThreshold,
+  startGrowStroke,
 } from '@/src/catstudio/sculpt/tools';
-
-type Mode = 'lasso-remove' | 'lasso-keep' | 'pick-remove' | 'pick-keep';
+import {
+  type SculptMode as Mode,
+  SCULPT_TOOLS as TOOLS,
+  gestureOf,
+  hintFor,
+} from '@/src/catstudio/sculpt/toolList';
+import SculptBone from '@/src/catstudio/components/SculptBone.vue';
 
 interface Props {
   view: Maybe<VtkViewApi>;
@@ -33,34 +42,6 @@ interface Props {
 const props = defineProps<Props>();
 const { view, imageId } = toRefs(props);
 const open = defineModel<boolean>('open', { default: false });
-
-const TOOLS: Array<{ mode: Mode; icon: string; title: string; hint: string }> =
-  [
-    {
-      mode: 'lasso-remove',
-      icon: 'mdi-lasso',
-      title: 'Laço: apagar',
-      hint: 'Contorne com o botão esquerdo o que quer apagar.',
-    },
-    {
-      mode: 'lasso-keep',
-      icon: 'mdi-selection-ellipse',
-      title: 'Laço: manter',
-      hint: 'Contorne o que quer manter; o resto some.',
-    },
-    {
-      mode: 'pick-remove',
-      icon: 'mdi-cursor-default-click-outline',
-      title: 'Clique: apagar',
-      hint: 'Clique numa estrutura (osso, mesa, cabo) para apagá-la inteira. Arrastar continua girando.',
-    },
-    {
-      mode: 'pick-keep',
-      icon: 'mdi-target',
-      title: 'Clique: manter',
-      hint: 'Clique na estrutura que deve ficar; o resto some. Arrastar continua girando.',
-    },
-  ];
 
 const root = ref<HTMLElement>();
 const mode = ref<Mode | null>(null);
@@ -74,9 +55,7 @@ const path = ref<Point[]>([]);
 const cropStore = useCropStore();
 const planes = cropStore.getComputedVTKPlanes(imageId);
 const summary = computed(() => sculptSummary(imageId.value ?? null));
-const hint = computed(
-  () => TOOLS.find((tool) => tool.mode === mode.value)?.hint ?? ''
-);
+const hint = computed(() => hintFor(mode.value));
 const container = computed(() => root.value?.parentElement ?? null);
 
 function viewRect(): DOMRect | null {
@@ -141,24 +120,53 @@ function toPoint(event: PointerEvent): Point | null {
   ];
 }
 
-const isLasso = () => mode.value?.startsWith('lasso') ?? false;
+const gesture = () => gestureOf(mode.value);
 const fromPanel = (event: Event) =>
   (event.target as HTMLElement | null)?.closest?.('.sculpt-panel') != null;
 
-// ----- laço: o botão esquerdo desenha em vez de girar -----
+// ----- laço e crescer: o botão esquerdo trabalha em vez de girar -----
 let drawing = false;
+let growing: GrowStroke | null = null;
+let growTimer = 0;
+const GROW_STEP_MS = 110;
+
+function startGrowing(point: Point) {
+  const where = target();
+  growing = where
+    ? startGrowStroke(where, {
+        point,
+        threshold: threshold.value,
+        keep: mode.value === 'grow-keep',
+      })
+    : null;
+  if (!growing) {
+    message.value =
+      'Não achei nada nesse ponto. Aperte em cima do vaso ou baixe a densidade mínima.';
+    return;
+  }
+  growTimer = window.setInterval(() => {
+    if (growing) message.value = growing.step();
+  }, GROW_STEP_MS);
+}
+
+function stopGrowing() {
+  window.clearInterval(growTimer);
+  if (growing) message.value = growing.finish();
+  growing = null;
+}
 
 function onPointerDown(event: PointerEvent) {
   if (!open.value || busy.value || event.button !== 0 || fromPanel(event))
     return;
   const point = toPoint(event);
-  if (!point) return;
-  if (isLasso()) {
+  if (!point || !mode.value) return;
+  if (gesture() !== 'pick') {
     event.stopPropagation();
     event.preventDefault();
-    drawing = true;
   }
   path.value = [point];
+  drawing = gesture() === 'lasso';
+  if (gesture() === 'grow') startGrowing(point);
 }
 
 function onPointerMove(event: PointerEvent) {
@@ -181,12 +189,16 @@ function finishLasso() {
 function finishClick(event: PointerEvent) {
   const [start, end] = [path.value[0], toPoint(event)];
   const rect = viewRect();
-  if (!start || !end || !rect || !mode.value?.startsWith('pick')) return;
+  if (!start || !end || !rect || gesture() !== 'pick') return;
   const moved = Math.hypot(
     (end[0] - start[0]) * rect.width,
     (end[1] - start[1]) * rect.height
   );
   if (moved > 4) return; // foi um giro, não um clique
+  if (mode.value === 'pick-bone') {
+    run((where) => flipBone(where, end));
+    return;
+  }
   const keep = mode.value === 'pick-keep';
   run((where) => pick(where, { point: end, threshold: threshold.value, keep }));
 }
@@ -197,7 +209,8 @@ function onPointerUp(event: PointerEvent) {
     event.stopPropagation();
     drawing = false;
     finishLasso();
-  } else finishClick(event);
+  } else if (growing) stopGrowing();
+  else finishClick(event);
   path.value = [];
 }
 
@@ -209,7 +222,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 });
 
 const pathPoints = computed(() =>
-  drawing || isLasso()
+  drawing || gesture() === 'lasso'
     ? path.value.map(([x, y]) => `${x * 100},${(1 - y) * 100}`).join(' ')
     : ''
 );
@@ -221,6 +234,8 @@ function toggle(next: Mode) {
 
 const removeFragmentsNow = () =>
   run((where) => fragments(where, threshold.value, fragmentMl.value));
+
+const detectBoneNow = () => run(findBone);
 
 function undo() {
   if (imageId.value && undoSculpt(imageId.value)) message.value = 'Desfeito.';
@@ -322,6 +337,13 @@ function restore() {
           Restaurar tudo
         </v-btn>
       </div>
+      <sculpt-bone
+        :image-id="imageId"
+        :busy="busy"
+        :picking="mode === 'pick-bone'"
+        @detect="detectBoneNow"
+        @pick="toggle('pick-bone')"
+      />
       <div class="sculpt-status" data-testid="sculpt-status">
         <template v-if="busy">Calculando…</template>
         <template v-else>{{ message || hint }}</template>

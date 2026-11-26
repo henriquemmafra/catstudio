@@ -11,23 +11,60 @@ import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray';
 import type { TypedArray } from '@kitware/vtk.js/types';
 import type { Maybe } from '@/src/types';
 import type { Dims } from './mask';
-import { sculptOf, sculptVersions } from './state';
+import {
+  type BoneMode,
+  boneModeFor,
+  boneOf,
+  boneViews,
+  sculptOf,
+  sculptVersions,
+} from './state';
 
 /** Volumes-base por exame, para as ferramentas lerem os valores originais. */
 const bases = new Map<string, vtkImageData>();
 export const baseImageOf = (imageID: string) => bases.get(imageID) ?? null;
 
-export function applyMask(
+export interface Layers {
+  /** 1 = escondido pela escultura */
+  hidden: Uint8Array | null;
+  /** > 0 = osso (ou a franja dele) */
+  bone: Uint8Array | null;
+}
+
+/**
+ * Osso translúcido: dois componentes por voxel. O primeiro leva tudo menos o
+ * osso; o segundo, só o osso. A vista mistura os dois com pesos diferentes.
+ */
+export function applySplit(
   source: ArrayLike<number>,
-  hidden: Uint8Array,
+  layers: Layers,
   target: TypedArray,
   air: number
 ) {
-  for (let i = 0; i < target.length; i++)
-    target[i] = hidden[i] ? air : source[i];
+  const { hidden, bone } = layers;
+  for (let i = 0; i < source.length; i++) {
+    const gone = hidden ? hidden[i] === 1 : false;
+    const isBone = bone ? bone[i] > 0 : false;
+    target[2 * i] = gone || isBone ? air : source[i];
+    target[2 * i + 1] = !gone && isBone ? source[i] : air;
+  }
 }
 
-function emptyCopy(base: vtkImageData): vtkImageData {
+/** Um componente só: escondidos (e o osso, se `bone` vier) viram ar. */
+export function applyHidden(
+  source: ArrayLike<number>,
+  layers: Layers,
+  target: TypedArray,
+  air: number
+) {
+  const { hidden, bone } = layers;
+  for (let i = 0; i < target.length; i++) {
+    const gone = (hidden ? hidden[i] : 0) || (bone ? bone[i] : 0);
+    target[i] = gone ? air : source[i];
+  }
+}
+
+function emptyCopy(base: vtkImageData, components: number): vtkImageData {
   const source = base.getPointData().getScalars();
   const data = source.getData() as TypedArray;
   const Ctor = data.constructor as new (n: number) => TypedArray;
@@ -39,11 +76,27 @@ function emptyCopy(base: vtkImageData): vtkImageData {
   copy.getPointData().setScalars(
     vtkDataArray.newInstance({
       name: source.getName(),
-      numberOfComponents: source.getNumberOfComponents(),
-      values: new Ctor(data.length),
+      numberOfComponents: components,
+      values: new Ctor(data.length * components),
     })
   );
   return copy;
+}
+
+interface Plan {
+  mode: BoneMode;
+  layers: Layers;
+}
+
+/** O que precisa mudar no volume deste exame; null = desenhar o original. */
+function planFor(imageID: string, image: vtkImageData): Plan | null {
+  const dims = image.getDimensions() as Dims;
+  const sculpt = sculptOf(imageID, dims);
+  const label = boneOf(imageID, dims);
+  const mode = label ? boneModeFor(boneViews[imageID]?.opacity ?? 1) : 'none';
+  const hidden = sculpt?.count ? sculpt.hidden : null;
+  if (!hidden && mode === 'none') return null;
+  return { mode, layers: { hidden, bone: mode === 'none' ? null : label } };
 }
 
 export function useSculptedImage(
@@ -54,33 +107,40 @@ export function useSculptedImage(
   let copy: vtkImageData | null = null;
   let copyOf: vtkImageData | null = null;
 
+  const copyWith = (image: vtkImageData, components: number) => {
+    const current = copy?.getPointData().getScalars().getNumberOfComponents();
+    if (copyOf !== image || current !== components) {
+      copy = emptyCopy(image, components);
+      copyOf = image;
+    }
+    return copy!;
+  };
+
   const refresh = () => {
     const id = imageID.value;
     const image = base.value;
     if (id && image) bases.set(id, image);
-    const sculpt =
-      id && image ? sculptOf(id, image.getDimensions() as Dims) : null;
-    if (!image || !sculpt?.count) {
+    const plan = id && image ? planFor(id, image) : null;
+    if (!image || !plan) {
       copy = null;
       copyOf = null;
       output.value = image ?? null;
       return;
     }
-    if (copyOf !== image) {
-      copy = emptyCopy(image);
-      copyOf = image;
-    }
+    const split = plan.mode === 'split';
+    const result = copyWith(image, split ? 2 : 1);
     const source = image.getPointData().getScalars();
-    const target = copy!.getPointData().getScalars();
-    applyMask(
+    const target = result.getPointData().getScalars();
+    const fill = split ? applySplit : applyHidden;
+    fill(
       source.getData(),
-      sculpt.hidden,
+      plan.layers,
       target.getData() as TypedArray,
       source.getRange()[0]
     );
     target.modified();
-    copy!.modified();
-    output.value = copy;
+    result.modified();
+    output.value = result;
   };
 
   watch(

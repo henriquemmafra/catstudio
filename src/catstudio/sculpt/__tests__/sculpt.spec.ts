@@ -14,15 +14,35 @@ import {
 } from '../mask';
 import {
   UNDO_LEVELS,
+  beginStroke,
+  boneModeFor,
+  boneOf,
+  boneViews,
+  clearBone,
   editSculpt,
+  sculptVersions,
+  setBone,
+  setBoneOpacity,
   forgetSculpts,
   resetSculpt,
   sculptOf,
   sculptSummary,
   undoSculpt,
 } from '../state';
-import { applyMask } from '../useSculptedImage';
+import { applyHidden, applySplit } from '../useSculptedImage';
 import { shouldRecover, useGlRecovery } from '../../glRecovery';
+import { grownVoxels, growLayers, startGrow } from '../grow';
+import { countBone, detectBone, toggleBone } from '../bone';
+import {
+  DEFAULT_LOOK,
+  LIGHT_PRESETS,
+  choosePreset,
+  lightLook,
+  lightPosition,
+  parseBackground,
+  sanitizeLook,
+} from '../../lightLook';
+import { exportScale } from '../../capture';
 
 const DIMS: Dims = [20, 20, 20];
 const at = (i: number, j: number, k: number) => i + 20 * (j + 20 * k);
@@ -223,9 +243,210 @@ describe('estado e desfazer', () => {
   it('troca os voxels escondidos por ar sem tocar no original', () => {
     const source = Int16Array.from([10, 20, 30]);
     const target = new Int16Array(3);
-    applyMask(source, Uint8Array.from([0, 1, 0]), target, -1024);
+    applyHidden(
+      source,
+      { hidden: Uint8Array.from([0, 1, 0]), bone: null },
+      target,
+      -1024
+    );
     expect([...target]).toEqual([10, -1024, 30]);
     expect([...source]).toEqual([10, 20, 30]);
+  });
+});
+
+describe('crescer a partir de um ponto', () => {
+  /** Um tubo de 1 voxel ao longo de i, de 2 a 17, em (j, k) = (10, 10). */
+  function tube(): Grid {
+    const scalars = new Int16Array(8000).fill(-1000);
+    for (let i = 2; i < 18; i++) scalars[at(i, 10, 10)] = 350;
+    return { dims: DIMS, scalars, hidden: new Uint8Array(8000) };
+  }
+
+  it('avança uma camada por vez ao longo do vaso', () => {
+    const grid = tube();
+    const grower = startGrow(grid, at(2, 10, 10), {
+      threshold: 150,
+      keep: false,
+    })!;
+    expect(grownVoxels(grower)).toBe(1);
+    expect(growLayers(grower, 3)).toBe(4);
+    expect(grid.hidden[at(5, 10, 10)]).toBe(1);
+    expect(grid.hidden[at(6, 10, 10)]).toBe(0);
+    expect(growLayers(grower, 100)).toBe(16);
+  });
+
+  it('manter: sobra só o que já cresceu', () => {
+    const grid = tube();
+    const grower = startGrow(grid, at(2, 10, 10), {
+      threshold: 150,
+      keep: true,
+    })!;
+    growLayers(grower, 2);
+    expect(grid.hidden[at(4, 10, 10)]).toBe(0);
+    expect(grid.hidden[at(5, 10, 10)]).toBe(1);
+    expect(hiddenCount(grid)).toBe(8000 - 3);
+  });
+
+  it('não começa no vazio nem atravessa o que já estava escondido', () => {
+    const grid = tube();
+    expect(
+      startGrow(grid, at(0, 0, 0), { threshold: 150, keep: true })
+    ).toBeNull();
+    expect(hiddenCount(grid)).toBe(0);
+    grid.hidden[at(6, 10, 10)] = 1;
+    const grower = startGrow(grid, at(2, 10, 10), {
+      threshold: 150,
+      keep: true,
+    })!;
+    expect(growLayers(grower, 100)).toBe(4);
+  });
+
+  it('o gesto inteiro vale um único desfazer', () => {
+    forgetSculpts();
+    const stroke = beginStroke('g', DIMS);
+    stroke.hidden[3] = 1;
+    stroke.update();
+    stroke.hidden[4] = 1;
+    stroke.update();
+    expect(sculptSummary('g')).toEqual({ hiddenVoxels: 2, undoLevels: 1 });
+    undoSculpt('g');
+    expect(sculptSummary('g').hiddenVoxels).toBe(0);
+    const again = beginStroke('g', DIMS);
+    again.hidden[9] = 1;
+    again.cancel();
+    expect(sculptSummary('g')).toEqual({ hiddenVoxels: 0, undoLevels: 0 });
+  });
+});
+
+describe('osso', () => {
+  /**
+   * Um "osso" (4..11)³ com casca de 900 e miolo de 250, um "vaso" homogêneo de
+   * 350 em (14..17, 2..17, 14..17) e uma calcificação solta de 2 voxels.
+   */
+  function body(): Grid {
+    const scalars = new Int16Array(8000).fill(40);
+    const shell = (n: number) => n === 4 || n === 11;
+    for (let k = 4; k < 12; k++)
+      for (let j = 4; j < 12; j++)
+        for (let i = 4; i < 12; i++)
+          scalars[at(i, j, k)] = shell(i) || shell(j) || shell(k) ? 900 : 250;
+    for (let k = 14; k < 18; k++)
+      for (let j = 2; j < 18; j++)
+        for (let i = 14; i < 18; i++) scalars[at(i, j, k)] = 350;
+    scalars[at(1, 1, 1)] = 1200;
+    scalars[at(2, 1, 1)] = 1200;
+    return { dims: DIMS, scalars, hidden: new Uint8Array(8000) };
+  }
+  const OPTIONS = { low: 200, minVoxels: 20 };
+
+  it('marca o osso e deixa o vaso contrastado e a calcificação', () => {
+    const grid = body();
+    const result = detectBone(grid, OPTIONS);
+    expect(result.components).toBe(1);
+    expect(result.voxels).toBe(512);
+    expect(result.label[at(4, 4, 4)]).toBe(1);
+    expect(result.label[at(8, 8, 8)]).toBe(1);
+    expect(result.label[at(15, 10, 15)]).toBe(0);
+    expect(result.label[at(1, 1, 1)]).toBe(0);
+  });
+
+  it('leva junto a franja de volume parcial, sem invadir o vaso', () => {
+    const { label } = detectBone(body(), OPTIONS);
+    expect(label[at(3, 8, 8)]).toBe(2);
+    expect(label[at(2, 8, 8)]).toBe(2);
+    expect(label[at(1, 8, 8)]).toBe(0);
+    expect(label[at(14, 8, 14)]).toBe(0);
+  });
+
+  it('não procura no que já foi apagado', () => {
+    const grid = body();
+    removeStructure(grid, at(8, 8, 8), 200);
+    expect(detectBone(grid, OPTIONS).voxels).toBe(0);
+  });
+
+  it('o clique corrige: vira osso e deixa de ser', () => {
+    const grid = body();
+    const { label } = detectBone(grid, OPTIONS);
+    expect(toggleBone(grid, label, at(15, 10, 15), 200)).toBe(4 * 16 * 4);
+    expect(label[at(15, 10, 15)]).toBe(1);
+    expect(toggleBone(grid, label, at(8, 8, 8), 200)).toBe(-512);
+    expect(label[at(8, 8, 8)]).toBe(0);
+    expect(label[at(3, 8, 8)]).toBe(0);
+    expect(countBone(label)).toBe(256);
+    expect(toggleBone(grid, label, at(0, 19, 19), 200)).toBe(0);
+  });
+
+  it('esconder e translúcido montam o volume certo', () => {
+    const source = Int16Array.from([10, 20, 30, 40]);
+    const layers = {
+      hidden: Uint8Array.from([0, 0, 0, 1]),
+      bone: Uint8Array.from([0, 1, 2, 1]),
+    };
+    const hiddenOut = new Int16Array(4);
+    applyHidden(source, layers, hiddenOut, -1024);
+    expect([...hiddenOut]).toEqual([10, -1024, -1024, -1024]);
+    const split = new Int16Array(8);
+    applySplit(source, layers, split, -1024);
+    expect([...split]).toEqual([10, -1024, -1024, 20, -1024, 30, -1024, -1024]);
+  });
+
+  it('a opacidade decide como o osso entra no volume', () => {
+    forgetSculpts();
+    expect(boneModeFor(1)).toBe('none');
+    expect(boneModeFor(0)).toBe('hide');
+    expect(boneModeFor(0.4)).toBe('split');
+    setBone('b', { dims: DIMS, label: new Uint8Array(8000), voxels: 5 });
+    const before = sculptVersions.b;
+    setBoneOpacity('b', 0.5);
+    expect(sculptVersions.b).toBe(before + 1);
+    setBoneOpacity('b', 0.3);
+    expect(sculptVersions.b).toBe(before + 1);
+    setBoneOpacity('b', -2);
+    expect(boneViews.b.opacity).toBe(0);
+    expect(boneOf('b', [1, 1, 1])).toBeNull();
+    clearBone('b');
+    expect(boneViews.b).toBeUndefined();
+  });
+});
+
+describe('iluminação e exportação', () => {
+  it('a luz padrão do estúdio vem de cima e da esquerda', () => {
+    const [x, y, z] = lightPosition({ direction: -35, height: 35 });
+    expect(x).toBeLessThan(0);
+    expect(y).toBeGreaterThan(0);
+    expect(z).toBeGreaterThan(0);
+    expect(Math.hypot(x, y, z)).toBeCloseTo(1);
+    expect(lightPosition({ direction: 0, height: 0 })).toEqual([0, 0, 1]);
+  });
+
+  it('aceita ajustes estragados do armazenamento', () => {
+    const look = sanitizeLook({
+      preset: 'neon',
+      direction: 900,
+      intensity: 'forte',
+      background: 'vermelho',
+    });
+    expect(look.preset).toBe('padrao');
+    expect(look.direction).toBe(90);
+    expect(look.intensity).toBe(DEFAULT_LOOK.intensity);
+    expect(look.background).toBe('#000000');
+    expect(sanitizeLook(null)).toEqual(DEFAULT_LOOK);
+    expect(parseBackground('#ffffff')).toEqual([1, 1, 1]);
+  });
+
+  it('escolher um preset troca luz e material de uma vez', () => {
+    choosePreset('dramatico');
+    expect(lightLook.preset).toBe('dramatico');
+    expect(lightLook.ambient).toBe(LIGHT_PRESETS.dramatico.ambient);
+    expect(lightLook.direction).toBe(60);
+    choosePreset('padrao');
+    expect(lightLook.direction).toBe(60);
+  });
+
+  it('a exportação não passa de 4096 px no maior lado', () => {
+    expect(exportScale([1000, 800], 2)).toBe(2);
+    expect(exportScale([1600, 900], 4)).toBeCloseTo(2.56);
+    expect(exportScale([5000, 900], 4)).toBe(1);
   });
 });
 
