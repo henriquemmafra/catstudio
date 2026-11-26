@@ -27,6 +27,7 @@
         </v-main>
         <controls-modal />
         <series-triage />
+        <valve-mode />
       </v-app>
       <persistent-overlay
         :disabled="!dragHover"
@@ -85,6 +86,7 @@ import VtkRenderWindowParent from '@/src/components/vtk/VtkRenderWindowParent.vu
 import { useSyncWindowing } from '@/src/composables/useSyncWindowing';
 import { useMemoryPolicy } from '@/src/catstudio/memory';
 import SeriesTriage from '@/src/catstudio/components/SeriesTriage.vue';
+import ValveMode from '@/src/catstudio/components/ValveMode.vue';
 import { readLaunchParams } from '@/src/utils/urlParams';
 
 export default defineComponent({
@@ -98,6 +100,7 @@ export default defineComponent({
     PersistentOverlay,
     ControlsModal,
     SeriesTriage,
+    ValveMode,
     WelcomePage,
     AppBar,
     VtkRenderWindowParent,

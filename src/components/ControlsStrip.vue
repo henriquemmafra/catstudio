@@ -16,6 +16,7 @@ import MessageCenter from '@/src/components/MessageCenter.vue';
 import { MessageType, useMessageStore } from '@/src/store/messages';
 import { ConnectionState, useServerStore } from '@/src/store/server';
 import LayoutSelector from '@/src/components/LayoutSelector.vue';
+import { valveMode } from '@/src/catstudio/valveMode';
 
 interface Props {
   hasData: boolean;
@@ -133,6 +134,14 @@ const { count: msgCount, badgeColor: msgBadgeColor } = useMessageBubble();
       </v-card>
     </v-menu>
     <controls-strip-tools v-if="hasData" />
+    <control-button
+      v-if="hasData"
+      size="40"
+      icon="mdi-heart-pulse"
+      name="Valvas (holograma e 3D)"
+      data-testid="open-valve-mode"
+      @click="valveMode.open = true"
+    />
     <v-spacer />
     <control-button
       v-if="serverUrl"
