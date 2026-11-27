@@ -223,6 +223,7 @@ import SculptPanel from '@/src/catstudio/components/SculptPanel.vue';
 import CropRotate from '@/src/catstudio/components/CropRotate.vue';
 import LayerBar from '@/src/catstudio/components/LayerBar.vue';
 import { useWindowDrag } from '@/src/catstudio/useWindowDrag';
+import { useHandoff } from '@/src/catstudio/director/useHandoff';
 import { displayPresetName } from '@/src/catstudio/paletteStore';
 import PhotoBadge from '@/src/catstudio/components/PhotoBadge.vue';
 import { takePhoto } from '@/src/catstudio/photo/run';
@@ -330,6 +331,9 @@ const {
 onVTKEvent(currentImageData, 'onModified', () => {
   vtkView.value?.requestRender();
 });
+
+// CatStudio: "Editar no 3D" do diretor de arte
+useHandoff(vtkView, viewId, currentImageID);
 
 // CatStudio: os dois botões do mouse juntos mexem na janela do 3D
 const windowDrag = useWindowDrag(rootEl, viewId, currentImageID);

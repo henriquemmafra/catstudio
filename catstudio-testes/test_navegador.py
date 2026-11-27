@@ -1355,3 +1355,37 @@ def test_camadas_e_destaque_segurando_o_cursor(session):
     page.get_by_test_id("sculpt-highlight-clear").click()
     assert page.get_by_test_id("sculpt-highlight").count() == 0
     assert not session.errors, session.errors
+
+
+def test_diretor_editar_no_3d(session):
+    """"Editar no 3D" leva a imagem do diretor para a vista 3D: câmera de
+    frente para o corte coronal, caixa de corte no plano (ferramenta de
+    recorte ligada), paleta por tecido; com "só os pulmões", o resto some."""
+    page = _director(session)
+    _ask_director(page, "coronal no centro em 3d")
+    page.get_by_test_id("director-edit-3d").click()
+    page.wait_for_timeout(500)
+    assert not page.get_by_test_id("director-mode").is_visible()
+    estado = page.evaluate(f"""() => {{ const p = {PINIA};
+        const id = [...p._s.get('image-cache').imageIds][0];
+        const crop = JSON.parse(JSON.stringify(p._s.get('crop').croppingByImageID[id]));
+        const img = p._s.get('image-cache').getVtkImageData(id).getBounds();
+        return {{ crop, img, tool: p._s.get('tool').currentTool }}; }}""")
+    # o corte coronal tira a metade da frente (y menor) do exame
+    assert estado["crop"]["Coronal"][0] > estado["img"][2] + 20, estado
+    assert estado["tool"] == "Crop", estado
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    cortado = _rgb_3d(page, view)
+    assert int((cortado.sum(axis=2) > 90).sum()) > 2000
+    assert "Músculo e osso" in page.locator(".volume-viewer-container").first.inner_text()
+
+    # só os pulmões
+    page.get_by_test_id("open-director-mode").click()
+    page.get_by_test_id("director-mode").wait_for()
+    _ask_director(page, "só os pulmões em 3d")
+    page.get_by_test_id("director-edit-3d").click()
+    page.wait_for_timeout(1500)
+    ids = f"[...{PINIA}._s.get('image-cache').imageIds][0]"
+    escondidos = page.evaluate(f"() => __catstudio.sculpt({ids}).hiddenVoxels")
+    assert escondidos > 100000, escondidos
+    assert not session.errors, session.errors

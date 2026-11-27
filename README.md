@@ -150,6 +150,17 @@ vistas em fantoma: os pontos provavelmente pedem ajuste no exame real.
   "mostra tudo" volta. A região do pulmão é a do ar interno, então vasos
   grandes do hilo e lesões coladas na parede podem ficar de fora.
 
+### Diretor de arte → "Editar no 3D"
+
+O botão **Editar no 3D** leva a imagem montada pelo diretor para a vista 3D
+comum, como ponto de partida: a câmera olhando do mesmo lado, a caixa de
+corte no plano do corte (com a ferramenta de recorte ligada, para ajustar
+arrastando), girada junto com o paciente se ele estava torto no aparelho, a
+paleta por tecido mais parecida e a cor do fundo. Com "só os pulmões", o resto
+do corpo fica escondido pela escultura (dá para desfazer). Daí em diante
+valem todas as ferramentas do 3D. Reabrir o diretor no mesmo exame continua
+de onde parou.
+
 ### Iluminação, fundo e exportação em alta
 
 - **Renderização → Iluminação e fundo**: presets Estúdio, Dramático, Suave e

@@ -10,14 +10,8 @@ import { useCurrentImage } from '@/src/composables/useCurrentImage';
 import { useImageCacheStore } from '@/src/store/image-cache';
 import { download } from '@/src/catstudio/capture';
 import { pinImage, unpinImage } from '@/src/catstudio/lazy';
+import { cloudConfig } from '@/src/catstudio/director/cloud';
 import {
-  CLOUD_FAILURE_TEXT,
-  CloudError,
-  askCloud,
-  cloudConfig,
-} from '@/src/catstudio/director/cloud';
-import {
-  askClaude,
   claudeSample,
   type ClaudeSample,
 } from '@/src/catstudio/director/claude';
@@ -33,7 +27,10 @@ import {
   alignedVolume,
   estimateRoll,
   rollNotes,
+  type Roll,
 } from '@/src/catstudio/director/alignment';
+import { handOff } from '@/src/catstudio/director/handoff';
+import { askAi } from '@/src/catstudio/director/askAi';
 import {
   shiftLimits,
   useStrip,
@@ -41,10 +38,7 @@ import {
 } from '@/src/catstudio/director/useStrip';
 import { useStripNavigation } from '@/src/catstudio/director/useStripNavigation';
 import { interpret, lateralSignOf } from '@/src/catstudio/director/interpret';
-import {
-  findLandmarks,
-  type Landmarks,
-} from '@/src/catstudio/director/landmarks';
+import { findLandmarks } from '@/src/catstudio/director/landmarks';
 import { directorMode } from '@/src/catstudio/director/mode';
 import {
   NORMAL_AXIS,
@@ -77,6 +71,7 @@ const history = shallowRef<Recipe[]>([]);
 const spaces = shallowRef<Record<Recipe['alinhamento'], Space> | null>(null);
 /** Referências do exame endireitado (para a IA e os pedidos). */
 const landmarks = computed(() => spaces.value?.paciente.lm ?? null);
+const measuredRoll = shallowRef<Roll>({ angle: 0, center: [0, 0] });
 const locator = shallowRef<CutJob | null>(null);
 /** Nível do localizador escolhido à mão (mm); null = o padrão. */
 const locatorAt = ref<number | null>(null);
@@ -109,9 +104,17 @@ const describeOf = (target: Recipe) =>
 const pause = () => new Promise<void>((resolve) => setTimeout(resolve));
 
 /** Lê o volume e estima as referências uma vez por exame aberto. */
+let preparedFor: unknown = null;
+
 async function prepare() {
   const id = currentImageID.value;
   const image = imageCache.getVtkImageData(id);
+  // reabrir o diretor no mesmo exame continua de onde parou
+  if (image && image === preparedFor && spaces.value) {
+    render();
+    return;
+  }
+  preparedFor = image;
   const scalars = image?.getPointData().getScalars();
   spaces.value = null;
   strip.reset();
@@ -131,6 +134,7 @@ async function prepare() {
   );
   const lm = findLandmarks(vol);
   const roll = estimateRoll(vol, lm);
+  measuredRoll.value = roll;
   const straight = alignedVolume(vol, roll);
   const straightLm = straight === vol ? lm : findLandmarks(straight);
   spaces.value = {
@@ -219,50 +223,21 @@ function lateralSign() {
   return lateralSignOf(cutPosition(recipe.value, lm), lm.midlineX);
 }
 
-async function fromClaude(request: string, lm: Landmarks) {
-  if (!claude.value) return null;
-  busy.value = 'Perguntando ao Claude…';
-  try {
-    return await askClaude(claude.value, {
-      text: request,
-      current: recipe.value,
-      landmarks: lm,
-    });
-  } catch {
-    notes.value.push('O Claude não respondeu ao pedido.');
-    return null;
-  }
-}
-
-async function fromCloud(request: string, lm: Landmarks) {
-  if (!cloud.value) {
-    if (claude.value) notes.value.push('Usei o interpretador local.');
-    return null;
-  }
-  busy.value = 'Perguntando à IA…';
-  try {
-    return await askCloud(cloud.value, {
-      text: request,
-      current: recipe.value,
-      landmarks: lm,
-    });
-  } catch (error) {
-    const reason = error instanceof CloudError ? error.reason : 'rede';
-    notes.value.push(
-      `${CLOUD_FAILURE_TEXT[reason]} Usei o interpretador local.`
-    );
-    return null;
-  }
-}
-
 async function submit() {
   const request = text.value.trim();
   const lm = landmarks.value;
   if (!request || !lm || busy.value) return;
   notes.value = [...lm.notes];
   comment.value = '';
-  const answer =
-    (await fromClaude(request, lm)) ?? (await fromCloud(request, lm));
+  const answer = await askAi(request, lm, {
+    claude: claude.value,
+    cloud: cloud.value,
+    current: recipe.value,
+    say: (line) => {
+      busy.value = line;
+    },
+    note: (line) => notes.value.push(line),
+  });
   busy.value = '';
   if (answer) {
     source.value = 'ia';
@@ -342,6 +317,17 @@ const drawingText = computed(() => busy.value || strip.drawing.value);
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (directorMode.open) onKey(event);
 });
+
+/** Leva a imagem atual para a vista 3D, como ponto de partida. */
+function editIn3D() {
+  const target = recipe.value;
+  const space = target ? spaceOf(target) : null;
+  const id = currentImageID.value;
+  if (!target || !space || !id) return;
+  const problem = handOff(id, target, { ...space, roll: measuredRoll.value });
+  if (problem) notes.value.push(problem);
+  else directorMode.open = false;
+}
 
 function savePng() {
   cutCanvas.value?.toBlob(
@@ -514,6 +500,17 @@ function savePng() {
                 data-testid="director-png"
                 @click="savePng"
                 >Salvar PNG</v-btn
+              >
+              <v-btn
+                size="small"
+                color="primary"
+                variant="flat"
+                class="text-none"
+                prepend-icon="mdi-rotate-3d-variant"
+                :disabled="!!busy"
+                data-testid="director-edit-3d"
+                @click="editIn3D"
+                >Editar no 3D</v-btn
               >
             </div>
           </template>

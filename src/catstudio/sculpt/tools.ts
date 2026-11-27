@@ -418,3 +418,46 @@ export function startBrushStroke(
     },
   };
 }
+
+// ---------- só uma região (vindo do diretor de arte) ----------
+
+/**
+ * Esconde tudo o que está fora da região. `inside` recebe o ponto em mm
+ * (coordenadas do aparelho). Devolve quantos voxels sumiram.
+ */
+type Inside = (x: number, y: number, z: number) => boolean;
+
+/** Uma linha do volume: esconde o que está fora; devolve quantos. */
+function keepRow(hidden: Uint8Array, inside: Inside, row: number[]): number {
+  const [start, count, x0, y0, z0, dx, dy, dz] = row;
+  let changed = 0;
+  for (let i = 0; i < count; i++) {
+    const index = start + i;
+    if (hidden[index] || inside(x0 + dx * i, y0 + dy * i, z0 + dz * i))
+      continue;
+    hidden[index] = 1;
+    changed += 1;
+  }
+  return changed;
+}
+
+export function keepRegion(target: SculptTarget, inside: Inside): number {
+  const dims = dimsOf(target.base);
+  const m = target.base.getIndexToWorld();
+  return editSculpt(target.imageID, dims, (hidden) => {
+    let changed = 0;
+    for (let k = 0; k < dims[2]; k++)
+      for (let j = 0; j < dims[1]; j++)
+        changed += keepRow(hidden, inside, [
+          dims[0] * (j + dims[1] * k),
+          dims[0],
+          m[4] * j + m[8] * k + m[12],
+          m[5] * j + m[9] * k + m[13],
+          m[6] * j + m[10] * k + m[14],
+          m[0],
+          m[1],
+          m[2],
+        ]);
+    return changed;
+  });
+}

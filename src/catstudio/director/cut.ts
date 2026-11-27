@@ -190,7 +190,7 @@ const hexToRgb = (hex: string): [number, number, number] => [
 const lungMasks = new WeakMap<WorldVolume, LungMask>();
 
 /** Região dos pulmões do volume (calculada uma vez por volume). */
-function lungMaskOf(vol: WorldVolume): LungMask {
+export function lungMaskOf(vol: WorldVolume): LungMask {
   const known = lungMasks.get(vol);
   if (known) return known;
   const mask = findLungMask(vol);
