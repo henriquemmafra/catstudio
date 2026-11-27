@@ -193,6 +193,7 @@
       <crop-rotate :view="vtkView" :image-id="currentImageID" />
       <sculpt-panel
         v-model:open="sculptOpen"
+        :view-id="viewId"
         :view="vtkView"
         :image-id="currentImageID"
       />
@@ -219,6 +220,7 @@ import { useViewStore } from '@/src/store/views';
 import ViewTypeSwitcher from '@/src/components/ViewTypeSwitcher.vue';
 import { captureViewHiRes, captureViewPNG } from '@/src/catstudio/capture';
 import { guardStatus } from '@/src/catstudio/renderGuard';
+import { useLocalStorage } from '@vueuse/core';
 import SculptPanel from '@/src/catstudio/components/SculptPanel.vue';
 import CropRotate from '@/src/catstudio/components/CropRotate.vue';
 import LayerBar from '@/src/catstudio/components/LayerBar.vue';
@@ -239,7 +241,8 @@ interface VolumeViewerOptions {
 }
 
 const vtkView = ref<VtkViewApi>();
-const sculptOpen = ref(false);
+// as ferramentas 3D ficam sempre expostas (a pessoa pode recolher)
+const sculptOpen = useLocalStorage('catstudio.3d.ferramentasAbertas', true);
 const layersOpen = ref(false);
 const layerBarRef = ref<{ openBar: () => void } | null>(null);
 function toggleLayers() {

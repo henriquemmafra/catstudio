@@ -56,6 +56,9 @@ import {
   sculptVersions,
 } from '@/src/catstudio/sculpt/state';
 import { focusOf } from '@/src/catstudio/sculpt/useSculptedImage';
+import { opacityPerMm } from '@/src/catstudio/paletteStore';
+import type vtkVolumeProperty from '@kitware/vtk.js/Rendering/Core/VolumeProperty';
+import type vtkRenderer from '@kitware/vtk.js/Rendering/Core/Renderer';
 import { parseHex } from '@/src/catstudio/palette';
 import {
   isReduced,
@@ -261,13 +264,20 @@ watchEffect(() => {
     property,
   });
 
-  // CatStudio: preset de iluminação e cor do fundo por cima do que o modo
-  // cinematográfico acabou de ajustar
-  applyLightLook(view.renderer, property, lightLook);
-  applyBackground(view.renderer, lightLook);
-
+  catstudioLook(view.renderer, property);
   view.requestRender();
 });
+
+/**
+ * CatStudio: por cima do que o modo cinematográfico acabou de ajustar —
+ * opacidade por milímetro (paletas do diretor), preset de luz e fundo.
+ */
+function catstudioLook(renderer: vtkRenderer, property: vtkVolumeProperty) {
+  if (imageID.value && opacityPerMm(viewID.value, imageID.value))
+    property.setScalarOpacityUnitDistance(0, 1);
+  applyLightLook(renderer, property, lightLook);
+  applyBackground(renderer, lightLook);
+}
 
 // CatStudio: volume de dois componentes (o resto e um "foco").
 //  - osso translúcido: o foco usa as mesmas curvas, com peso igual à

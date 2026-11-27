@@ -20,7 +20,7 @@ describe('editar no 3D', () => {
     expect(from).toBeCloseTo(lm.midCoronalY, 0);
     expect(to).toBeCloseTo(Math.min(lm.body[1][1] + 15, from + 160), 0);
     expect(sent.crop!.rotation).toBeNull();
-    expect(sent.palette).toBe('musculo');
+    expect(sent.palette).toBe('diretor-tecidos');
   });
 
   it('paciente girado: câmera e caixa giram junto', () => {
@@ -58,7 +58,7 @@ describe('editar no 3D', () => {
     expect(sent.crop).toBeNull();
     expect(sent.keepOnly!(0, 0, 0)).toBe(true);
     expect(sent.keepOnly!(50, 0, 0)).toBe(false);
-    expect(paletteFor(recipe)).toBe('pulmao');
+    expect(paletteFor(recipe)).toBe('diretor-pulmao');
   });
 
   it('corte 2D: mantém do plano até o fim do corpo', () => {

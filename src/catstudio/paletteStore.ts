@@ -72,6 +72,8 @@ export function deletePalette(id: string) {
 interface Active {
   palette: Palette;
   tweak: Tweak;
+  /** opacidade por milímetro: a vista usa 1 mm como unidade de opacidade */
+  extinction: boolean;
   /** nome do mapa de cores registrado no vtk.js */
   preset: string;
 }
@@ -113,7 +115,7 @@ export function applyPalette(
     number,
     number,
   ];
-  const stops = tweaked(palette, tweak);
+  const stops = tweaked(palette, tweak, palette.extinction);
   const key = keyOf(viewID, imageID);
   const previous = active[key]?.preset;
   if (previous) vtkColorMaps.removePresetByName(previous);
@@ -124,7 +126,7 @@ export function applyPalette(
     ColorSpace: 'RGB',
     RGBPoints: colorPoints(stops, range),
   });
-  active[key] = { palette, tweak, preset };
+  active[key] = { palette, tweak, preset, extinction: !!palette.extinction };
   const store = useVolumeColoringStore();
   store.updateColorTransferFunction(viewID, imageID, {
     preset,
@@ -150,3 +152,7 @@ export function tweakPalette(target: PaletteTarget, tweak: Tweak): boolean {
     gain: clamp(tweak.gain, TWEAK_LIMITS.gain),
   });
 }
+
+/** A vista deve medir a opacidade por milímetro (paletas do diretor)? */
+export const opacityPerMm = (viewID: string, imageID: string) =>
+  activePalette(viewID, imageID)?.extinction ?? false;

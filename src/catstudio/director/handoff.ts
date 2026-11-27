@@ -16,7 +16,7 @@ import type { Landmarks, LungMask } from './landmarks';
 import { inLungs } from './landmarks';
 import { NORMAL_AXIS, cutPosition, type Recipe } from './recipe';
 import { rotateXY, type Roll } from './alignment';
-import { viewDirection } from './render3d';
+import { styleForWindow, viewDirection } from './render3d';
 import type { Vec3, WorldVolume } from './volume';
 
 export interface CameraPose {
@@ -56,13 +56,10 @@ export function sendToView(request: Handoff) {
   handoff.seq += 1;
 }
 
-/** Paleta por tecido mais parecida com o estilo do diretor. */
+/** A paleta do diretor com as mesmas cores da imagem dele. */
 export function paletteFor(recipe: Recipe): string {
-  if (recipe.isolar === 'pulmoes') return 'pulmao';
-  if (recipe.janela === 'osso') return 'osso';
-  if (recipe.janela === 'angio') return 'vascular';
-  if (recipe.janela === 'pulmao') return 'pulmao';
-  return 'musculo';
+  if (recipe.isolar === 'pulmoes') return 'diretor-pulmao';
+  return `diretor-${styleForWindow(recipe.janela)}`;
 }
 
 const MARGIN = 15;

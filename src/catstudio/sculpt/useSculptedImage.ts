@@ -11,6 +11,7 @@ import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray';
 import type { TypedArray } from '@kitware/vtk.js/types';
 import type { Maybe } from '@/src/types';
 import type { Dims } from './mask';
+import { smooth3, smoothing } from './smooth';
 import {
   type BoneMode,
   boneModeFor,
@@ -145,6 +146,23 @@ export function useSculptedImage(
   const output = shallowRef<Maybe<vtkImageData>>(null);
   let copy: vtkImageData | null = null;
   let copyOf: vtkImageData | null = null;
+  let smooth: vtkImageData | null = null;
+  let smoothOf: vtkImageData | null = null;
+
+  /** O volume sem granulado (calculado uma vez por volume), ou o original. */
+  const sourceOf = (image: vtkImageData) => {
+    if (!smoothing.enabled) return image;
+    if (smoothOf !== image) {
+      smooth = emptyCopy(image, 1);
+      const target = smooth.getPointData().getScalars();
+      const data = target.getData() as TypedArray;
+      data.set(image.getPointData().getScalars().getData() as TypedArray);
+      smooth3(data, image.getDimensions() as Dims);
+      target.modified();
+      smoothOf = image;
+    }
+    return smooth!;
+  };
 
   const copyWith = (image: vtkImageData, components: number) => {
     const current = copy?.getPointData().getScalars().getNumberOfComponents();
@@ -155,11 +173,16 @@ export function useSculptedImage(
     return copy!;
   };
 
-  const refresh = () => {
+  /** O volume a desenhar e o que mudar nele (null = desenhar como está). */
+  const prepared = () => {
     const id = imageID.value;
-    const image = base.value;
+    const image = base.value ? sourceOf(base.value) : null;
     if (id && image) registerBase(id, image);
-    const plan = id && image ? planFor(id, image) : null;
+    return { image, plan: id && image ? planFor(id, image) : null };
+  };
+
+  const refresh = () => {
+    const { image, plan } = prepared();
     if (!image || !plan) {
       copy = null;
       copyOf = null;
@@ -183,16 +206,24 @@ export function useSculptedImage(
   };
 
   watch(
-    [base, imageID, () => (imageID.value ? sculptVersions[imageID.value] : 0)],
+    [
+      base,
+      imageID,
+      () => (imageID.value ? sculptVersions[imageID.value] : 0),
+      () => smoothing.enabled,
+    ],
     refresh,
     { immediate: true }
   );
 
   onScopeDispose(() => {
     const id = imageID.value;
-    if (id && bases.get(id) === base.value) bases.delete(id);
+    const mine = [base.value, smooth];
+    if (id && mine.includes(bases.get(id) ?? null)) bases.delete(id);
     copy = null;
     copyOf = null;
+    smooth = null;
+    smoothOf = null;
   });
 
   return output;

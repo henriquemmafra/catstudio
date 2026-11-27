@@ -6,7 +6,8 @@ import VtkMouseInteractionManipulator from '@/src/components/vtk/VtkMouseInterac
 import { useToolStore } from '@/src/store/tools';
 import { Tools } from '@/src/store/tools/types';
 
-defineProps<{ scrollZoom?: boolean }>();
+// rightScroll: o botão direito passa os cortes; o zoom fica no Ctrl + direito.
+defineProps<{ scrollZoom?: boolean; rightScroll?: boolean }>();
 const { currentTool } = storeToRefs(useToolStore());
 </script>
 
@@ -31,6 +32,10 @@ const { currentTool } = storeToRefs(useToolStore());
   />
   <vtk-mouse-interaction-manipulator
     :manipulator-constructor="vtkMouseCameraTrackballZoomToMouseManipulator"
-    :manipulator-props="{ button: 3, scrollEnabled: !!scrollZoom }"
+    :manipulator-props="{
+      button: 3,
+      control: !!rightScroll,
+      scrollEnabled: !!scrollZoom,
+    }"
   />
 </template>

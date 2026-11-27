@@ -15,6 +15,7 @@ import http.server
 import io
 import json
 import os
+import re
 import shutil
 import socket
 import sys
@@ -116,6 +117,13 @@ class Session:
     def __init__(self, browser, url, init_script=None):
         self.url = url
         self.page = browser.new_page(viewport={"width": 1600, "height": 950}, accept_downloads=True)
+        # nos testes as ferramentas 3D começam recolhidas (cobrem a vista nas
+        # fotos) e o 3D sem suavização (os testes medem pixels do volume cru)
+        self.page.add_init_script(
+            "try { if (!localStorage.getItem('catstudio.3d.ferramentasAbertas'))"
+            " localStorage.setItem('catstudio.3d.ferramentasAbertas', 'false');"
+            " if (!localStorage.getItem('catstudio.3d.suavizar'))"
+            " localStorage.setItem('catstudio.3d.suavizar', '0'); } catch (e) {}")
         if init_script:
             self.page.add_init_script(init_script)
         self.external = []
@@ -815,6 +823,12 @@ def _gray_3d(page, view):
     return np.asarray(Image.open(io.BytesIO(view.screenshot())).convert("L")).astype(float)
 
 
+def _open_sculpt(page):
+    """As ferramentas 3D já vêm abertas; se estiverem recolhidas, abre."""
+    if page.get_by_test_id("sculpt-panel").count() == 0:
+        page.get_by_test_id("open-sculpt").click()
+
+
 def _sculpt_status(page):
     return page.get_by_test_id("sculpt-status").inner_text()
 
@@ -834,7 +848,7 @@ def test_esculpir_o_3d_com_laco_clique_e_desfazer(session):
     session.open_files(files_of("ax_main"))
     page.wait_for_timeout(5000)
     view = page.get_by_test_id("vtk-view vtk-volume-view").first
-    page.get_by_test_id("open-sculpt").click()
+    _open_sculpt(page)
     inteiro = _sculpt_shot(page, view)
     meio = inteiro.shape[1] // 2
     # só a faixa do meio: em cima e embaixo ficam os textos da vista
@@ -936,7 +950,7 @@ def test_osso_translucido_escondido_e_crescer_segurando(session):
     session.open_files(files_of("ax_main"))
     page.wait_for_timeout(5000)
     view = page.get_by_test_id("vtk-view vtk-volume-view").first
-    page.get_by_test_id("open-sculpt").click()
+    _open_sculpt(page)
     inteiro = _sculpt_shot(page, view)
     meio = inteiro.shape[1] // 2
     esfera = lambda im, corte: int((im[60:-60, meio + 40:] > corte).sum())
@@ -1064,7 +1078,7 @@ def test_dois_botoes_mexem_na_janela_do_3d_e_tirar_mesa(session):
     page.mouse.move(cx - 60, cy - 90, steps=6)     # devolve a janela
     page.mouse.up(button="right")
     page.mouse.up(button="left")
-    page.get_by_test_id("open-sculpt").click()
+    _open_sculpt(page)
     inteiro = _sculpt_shot(page, view)
     escondidos = lambda: page.evaluate(f"""() => __catstudio.sculpt(
         [...{PINIA}._s.get('image-cache').imageIds][0]).hiddenVoxels""")
@@ -1130,7 +1144,7 @@ def test_girar_a_caixa_de_corte_e_borracha(session):
     page.evaluate(f"() => {PINIA}._s.get('tool').setCurrentTool('WindowLevel')")
     page.evaluate(f"""() => {{ const p = {PINIA}; const id = [...p._s.get('image-cache').imageIds][0];
         p._s.get('crop').resetCropping(id); }}""")
-    page.get_by_test_id("open-sculpt").click()
+    _open_sculpt(page)
     inteiro = _sculpt_shot(page, view)
     meio = inteiro.shape[1] // 2
     ys, xs = np.nonzero(inteiro[60:-60, meio + 40:] > 120)
@@ -1244,7 +1258,7 @@ def test_foto_final_no_processador(session, tmp_path):
     assert (a & b).sum() > 0.8 * a.sum() and (a & b).sum() > 0.8 * b.sum()
 
     # tirar a esfera da direita com o clique também tira da foto
-    page.get_by_test_id("open-sculpt").click()
+    _open_sculpt(page)
     meio = tela.shape[1] // 2
     ys, xs = np.nonzero(tela[60:-60, meio + 40:] > 120)
     page.get_by_test_id("sculpt-pick-remove").click()
@@ -1337,7 +1351,7 @@ def test_camadas_e_destaque_segurando_o_cursor(session):
     assert claros() > 0.9 * tudo
 
     # crescer: destacar, segurando em cima do cilindro
-    page.get_by_test_id("open-sculpt").click()
+    _open_sculpt(page)
     page.get_by_test_id("sculpt-grow-highlight").click()
     caixa = view.bounding_box()
     page.mouse.move(caixa["x"] + caixa["width"] / 2, caixa["y"] + caixa["height"] * 0.3)
@@ -1351,7 +1365,7 @@ def test_camadas_e_destaque_segurando_o_cursor(session):
     im = _rgb_3d(page, view)
     vermelho = int(((im[..., 0] > 180) & (im[..., 1] < 120) & (im[..., 2] < 120)).sum())
     assert vermelho > 300, vermelho
-    page.get_by_test_id("open-sculpt").click()
+    _open_sculpt(page)
     page.get_by_test_id("sculpt-highlight-clear").click()
     assert page.get_by_test_id("sculpt-highlight").count() == 0
     assert not session.errors, session.errors
@@ -1377,7 +1391,7 @@ def test_diretor_editar_no_3d(session):
     view = page.get_by_test_id("vtk-view vtk-volume-view").first
     cortado = _rgb_3d(page, view)
     assert int((cortado.sum(axis=2) > 90).sum()) > 2000
-    assert "Músculo e osso" in page.locator(".volume-viewer-container").first.inner_text()
+    assert "Diretor: tecidos" in page.locator(".volume-viewer-container").first.inner_text()
 
     # só os pulmões
     page.get_by_test_id("open-director-mode").click()
@@ -1388,4 +1402,129 @@ def test_diretor_editar_no_3d(session):
     ids = f"[...{PINIA}._s.get('image-cache').imageIds][0]"
     escondidos = page.evaluate(f"() => __catstudio.sculpt({ids}).hiddenVoxels")
     assert escondidos > 100000, escondidos
+    assert not session.errors, session.errors
+
+
+def test_caixa_de_frente_para_a_tela_e_limpar_poeira(session):
+    """Com a câmera girada, "De frente para a tela" gira a caixa de corte;
+    os botões de 15° somam giro; Ctrl+arrastar gira sem ligar o modo. E o
+    botão "Limpar poeira" responde na barra de camadas."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(4000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    caixa = view.bounding_box()
+    cx, cy = caixa["x"] + caixa["width"] / 2, caixa["y"] + caixa["height"] / 2
+    page.evaluate(f"() => {PINIA}._s.get('tool').setCurrentTool('Crop')")
+    page.mouse.move(cx + 150, cy + 120)
+    page.mouse.down()
+    page.mouse.move(cx + 230, cy + 90, steps=6)
+    page.mouse.up()
+    page.wait_for_timeout(1000)
+    assert page.get_by_test_id("crop-rotate-align").count() == 0
+    page.get_by_test_id("crop-rotate-screen").click()
+    page.wait_for_timeout(500)
+    assert page.get_by_test_id("crop-rotate-align").count() == 1
+    antes = view.screenshot()
+    page.get_by_test_id("crop-rotate-right").click()
+    page.wait_for_timeout(2500)
+    assert view.screenshot() != antes
+    page.get_by_test_id("crop-rotate-align").click()
+    # Ctrl + arrastar gira a caixa (sem girar a câmera)
+    page.keyboard.down("Control")
+    page.mouse.move(cx + 150, cy + 120)
+    page.mouse.down()
+    page.mouse.move(cx + 220, cy + 120, steps=6)
+    page.mouse.up()
+    page.keyboard.up("Control")
+    page.wait_for_timeout(500)
+    assert page.get_by_test_id("crop-rotate-align").count() == 1
+
+    page.evaluate(f"() => {PINIA}._s.get('tool').setCurrentTool('WindowLevel')")
+    page.get_by_test_id("layer-pill").click()
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=layer-dust]')", timeout=60000)
+    page.get_by_test_id("layer-moles").click()
+    page.get_by_test_id("layer-dust").click()
+    page.wait_for_function(
+        """() => /fragmento|Não achei/.test(document.querySelector('[data-testid=layer-message]').textContent)""",
+        timeout=60000)
+    assert not session.errors, session.errors
+
+
+def test_ferramentas_3d_expostas_laco_fica_ligado_e_granulado(session):
+    """Sem preferência guardada, as ferramentas 3D já vêm abertas e a
+    suavização ligada; o laço continua armado depois de um corte; desligar a
+    suavização muda a imagem."""
+    page = session.page
+    # (os testes forçam "recolhido" e "sem suavizar"; aqui valem os padrões do site)
+    page.evaluate("""() => { localStorage.setItem('catstudio.3d.ferramentasAbertas', 'true');
+                             localStorage.setItem('catstudio.3d.suavizar', '1'); }""")
+    page.reload(wait_until="networkidle")
+    page.get_by_text("Abrir pasta do exame").first.wait_for(timeout=60000)
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    assert page.get_by_test_id("sculpt-panel").count() == 1
+    suavizar = page.get_by_test_id("sculpt-smooth")
+    assert suavizar.is_checked()
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    caixa = view.bounding_box()
+    x0, y0, w, h = caixa["x"], caixa["y"], caixa["width"], caixa["height"]
+    laco = page.get_by_test_id("sculpt-lasso-remove")
+    laco.click()
+    for _ in range(2):   # dois cortes seguidos, sem religar o laço
+        page.mouse.move(x0 + w * 0.75, y0 + 60)
+        page.mouse.down()
+        for x, y in [(x0 + w - 8, y0 + 60), (x0 + w - 8, y0 + h - 60), (x0 + w * 0.75, y0 + h - 60)]:
+            page.mouse.move(x, y, steps=4)
+        page.mouse.up()
+        page.wait_for_timeout(1500)
+        assert "bg-primary" in (laco.get_attribute("class") or ""), laco.get_attribute("class")
+    page.keyboard.press("Escape")
+    assert "bg-primary" not in (laco.get_attribute("class") or "")
+
+    com = _gray_3d(page, view)
+    suavizar.uncheck()
+    sem = _gray_3d(page, view)
+    assert np.abs(com - sem).mean() > 0.02
+    assert not session.errors, session.errors
+
+
+def test_botao_direito_arrastando_passa_os_cortes(session):
+    """Segurar o botão direito e arrastar na vista 2D passa os cortes (para
+    baixo e para cima); o zoom com o direito fica no Ctrl."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    _views(page)
+    axial = page.get_by_test_id("vtk-view vtk-two-view").first
+    box = axial.bounding_box()
+    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+
+    def corte():
+        texto = page.evaluate(
+            "() => [...document.querySelectorAll('.overlay-cell, div')].map(e => e.textContent)"
+            ".find(t => /^\\s*Corte: \\d+\\/\\d+\\s*$/.test(t))")
+        return int(re.search(r"Corte: (\d+)/", texto).group(1))
+
+    def arrastar(dy, ctrl=False):
+        if ctrl:
+            page.keyboard.down("Control")
+        page.mouse.move(cx, cy)
+        page.mouse.down(button="right")
+        for i in range(1, 9):
+            page.mouse.move(cx, cy + dy * i / 8)
+        page.mouse.up(button="right")
+        if ctrl:
+            page.keyboard.up("Control")
+        page.wait_for_timeout(300)
+
+    inicio = corte()
+    arrastar(box["height"] * 0.2)
+    desceu = corte()
+    assert desceu != inicio
+    arrastar(-box["height"] * 0.2)
+    assert corte() == inicio
+    # com Ctrl o direito dá zoom e não mexe no corte
+    arrastar(box["height"] * 0.2, ctrl=True)
+    assert corte() == inicio
     assert not session.errors, session.errors

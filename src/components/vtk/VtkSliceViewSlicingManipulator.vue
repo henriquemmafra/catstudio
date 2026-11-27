@@ -62,6 +62,28 @@ const scroll = useMouseRangeManipulatorListener(
 );
 
 syncRef(scroll, sliceConfig.slice, { immediate: true });
+
+// CatStudio: segurar o botão direito e arrastar também passa os cortes
+// (arrastar a altura inteira da vista percorre o exame todo).
+const { instance: dragManipulator } = useVtkInteractionManipulator(
+  interactorStyle,
+  vtkMouseRangeManipulator,
+  computed(() => ({ button: 3, dragEnabled: true, scrollEnabled: false }))
+);
+
+const dragged = useMouseRangeManipulatorListener(
+  dragManipulator,
+  'vertical',
+  sliceConfig.range,
+  1,
+  sliceConfig.slice.value,
+  2,
+  () => {
+    useViewStore().setActiveView(unref(viewId));
+  }
+);
+
+syncRef(dragged, sliceConfig.slice, { immediate: true });
 </script>
 
 <template><slot></slot></template>

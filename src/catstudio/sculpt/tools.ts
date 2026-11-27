@@ -26,6 +26,7 @@ import {
   boneViews,
   editSculpt,
   highlightMask,
+  layersOf,
   setBone,
   setLayers,
   updateHighlight,
@@ -34,7 +35,7 @@ import { type Grower, grownVoxels, growLayers, startGrow } from './grow';
 import { BONE_LOW, countBone, detectBone, toggleBone } from './bone';
 import { removeOutsideBody } from './body';
 import { classify } from './layers';
-import { hiddenOf as hiddenNow } from './useSculptedImage';
+import { hiddenOf as hiddenNow, union } from './useSculptedImage';
 
 export interface SculptTarget {
   view: VtkViewApi;
@@ -202,13 +203,20 @@ export function fragments(
   maxMl: number
 ): string {
   const minVoxels = Math.max(2, Math.ceil(maxMl / volumeMl(target.base, 1)));
+  const dims = dimsOf(target.base);
+  // camadas desligadas também separam: o que sobra solto depois de esconder
+  // os músculos é poeira, mesmo que antes estivesse grudado neles
+  const layered = layersOf(target.imageID, dims)?.hidden ?? null;
   let message = 'Não achei fragmentos desse tamanho.';
-  editSculpt(target.imageID, dimsOf(target.base), (hidden) => {
+  editSculpt(target.imageID, dims, (hidden) => {
+    const blocked = union(hidden, layered)!.slice();
     const result = removeFragments(
-      gridOf(target, hidden),
+      gridOf(target, blocked),
       threshold,
       minVoxels
     );
+    for (let i = 0; i < hidden.length; i++)
+      if (blocked[i] && !hidden[i] && !(layered && layered[i])) hidden[i] = 1;
     if (result.removed)
       message = `Tirei ${result.removed} fragmento(s), ${formatMl(
         volumeMl(target.base, result.voxels)

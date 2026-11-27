@@ -12,6 +12,7 @@ import type vtkVolumeProperty from '@kitware/vtk.js/Rendering/Core/VolumePropert
 
 export type LightPreset =
   | 'padrao'
+  | 'diretor'
   | 'estudio'
   | 'dramatico'
   | 'suave'
@@ -38,6 +39,18 @@ export const LIGHT_PRESETS: Record<
   Exclude<LightPreset, 'padrao'>,
   Material & { title: string }
 > = {
+  // a luz do diretor de arte: vem do observador, do alto e da esquerda; sem
+  // brilho, e a face do corte iluminada por igual
+  diretor: {
+    title: 'Diretor',
+    direction: -24,
+    height: 32,
+    intensity: 1,
+    ambient: 0.32,
+    diffuse: 0.68,
+    specular: 0,
+    specularPower: 1,
+  },
   estudio: {
     title: 'Estúdio',
     direction: -35,
@@ -219,6 +232,9 @@ export function applyLightLook(
   property: vtkVolumeProperty,
   look: LightLook
 ) {
+  // no visual do diretor, a normal vem da opacidade: a face do corte (onde a
+  // opacidade salta) fica lisa e iluminada por igual, sem o granulado
+  property.setComputeNormalFromOpacity(look.preset === 'diretor');
   if (look.preset === 'padrao') return;
   if (renderer.getLights().length === 0) renderer.createLight();
   const light = renderer.getLights()[0];

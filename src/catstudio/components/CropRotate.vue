@@ -18,6 +18,9 @@ import {
   isRotated,
   resetBoxRotation,
   rotateBox,
+  rotationAbout,
+  screenRotation,
+  setBoxRotation,
 } from '@/src/catstudio/cropRotation';
 
 interface Props {
@@ -51,8 +54,10 @@ useEventListener(
   container,
   'pointerdown',
   (event: PointerEvent) => {
-    if (!turning.value || !cropping.value || fromOwnButtons(event)) return;
+    if (!cropping.value || fromOwnButtons(event)) return;
     if (event.button !== 0 || event.buttons !== 1) return;
+    // Ctrl + arrastar gira a caixa sem precisar ligar "Girar caixa"
+    if (!turning.value && !event.ctrlKey) return;
     event.stopPropagation();
     event.preventDefault();
     last = { x: event.clientX, y: event.clientY };
@@ -104,6 +109,51 @@ useEventListener(
   { capture: true }
 );
 
+/** Câmera e centro do exame, para os giros por botão. */
+function cameraNow() {
+  const camera = view.value?.renderer.getActiveCamera();
+  if (!camera) return null;
+  return {
+    up: camera.getViewUp() as [number, number, number],
+    direction: camera.getDirectionOfProjection() as [number, number, number],
+    pivot: vtkBoundingBox.getCenter(metadata.value.worldBounds) as [
+      number,
+      number,
+      number,
+    ],
+  };
+}
+
+/** Deixa a caixa de frente para a tela: o corte fica paralelo à tela. */
+function faceScreen() {
+  const id = imageId.value;
+  const now = cameraNow();
+  if (!id || !now) return;
+  const d = metadata.value.orientation;
+  const axes = [0, 1, 2].map((a) => [d[3 * a], d[3 * a + 1], d[3 * a + 2]]) as [
+    [number, number, number],
+    [number, number, number],
+    [number, number, number],
+  ];
+  setBoxRotation(id, screenRotation(now, axes, now.pivot));
+  view.value?.requestRender();
+}
+
+/**
+ * Gira a caixa em torno da linha de visão (como girar uma foto na mesa).
+ * Positivo = sentido horário na tela (a câmera olha ao longo do eixo).
+ */
+function spin(degrees: number) {
+  const id = imageId.value;
+  const now = cameraNow();
+  if (!id || !now) return;
+  rotateBox(
+    id,
+    rotationAbout(now.pivot, now.direction, (degrees * Math.PI) / 180)
+  );
+  view.value?.requestRender();
+}
+
 function align() {
   if (imageId.value) resetBoxRotation(imageId.value);
   view.value?.requestRender();
@@ -124,6 +174,32 @@ function align() {
         Girar caixa
       </v-btn>
       <v-btn
+        size="small"
+        variant="tonal"
+        prepend-icon="mdi-monitor-screenshot"
+        data-testid="crop-rotate-screen"
+        title="Gire o exame até o ângulo que quiser e clique: a caixa fica de frente para a tela e o corte, paralelo a ela"
+        @click="faceScreen"
+      >
+        De frente para a tela
+      </v-btn>
+      <v-btn
+        icon="mdi-rotate-left"
+        size="small"
+        variant="tonal"
+        aria-label="Girar a caixa 15° para a esquerda"
+        data-testid="crop-rotate-left"
+        @click="spin(-15)"
+      />
+      <v-btn
+        icon="mdi-rotate-right"
+        size="small"
+        variant="tonal"
+        aria-label="Girar a caixa 15° para a direita"
+        data-testid="crop-rotate-right"
+        @click="spin(15)"
+      />
+      <v-btn
         v-if="rotated"
         size="small"
         variant="tonal"
@@ -131,10 +207,14 @@ function align() {
         data-testid="crop-rotate-align"
         @click="align"
       >
-        Alinhar
+        Alinhar ao exame
       </v-btn>
-      <span v-if="turning" class="crop-rotate-hint">
-        Arraste com o botão esquerdo para girar a caixa.
+      <span class="crop-rotate-hint">
+        {{
+          turning
+            ? 'Arraste com o botão esquerdo para girar a caixa.'
+            : 'Ctrl + arrastar gira a caixa.'
+        }}
       </span>
     </div>
   </div>
@@ -167,7 +247,9 @@ function align() {
   color: #fff;
   font-size: 12px;
   pointer-events: all;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100% - 20px);
 }
 
 .crop-rotate :deep(.v-btn) {

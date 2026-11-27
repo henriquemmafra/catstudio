@@ -30,11 +30,15 @@ import {
 } from '@/src/catstudio/sculpt/tools';
 import {
   type SculptMode as Mode,
-  SCULPT_TOOLS as TOOLS,
+  GROUP_TITLE,
+  type ToolGroup,
   gestureOf,
   hintFor,
+  toolsIn,
 } from '@/src/catstudio/sculpt/toolList';
+import useVolumeColoringStore from '@/src/store/view-configs/volume-coloring';
 import SculptBone from '@/src/catstudio/components/SculptBone.vue';
+import { smoothing } from '@/src/catstudio/sculpt/smooth';
 import SculptHighlight from '@/src/catstudio/components/SculptHighlight.vue';
 import {
   autoTable,
@@ -49,10 +53,11 @@ import {
 interface Props {
   view: Maybe<VtkViewApi>;
   imageId: Maybe<string>;
+  viewId: string;
 }
 
 const props = defineProps<Props>();
-const { view, imageId } = toRefs(props);
+const { view, imageId, viewId } = toRefs(props);
 const open = defineModel<boolean>('open', { default: false });
 
 const root = ref<HTMLElement>();
@@ -62,6 +67,9 @@ const message = ref('');
 const threshold = ref(0);
 const range = ref<[number, number]>([0, 1]);
 const fragmentMl = ref(1);
+const DUST_SIZES = [0.5, 1, 3, 10, 30];
+const GROUPS: ToolGroup[] = ['apagar', 'manter', 'destacar'];
+const showSettings = ref(false);
 const brushMm = ref(8);
 const path = ref<Point[]>([]);
 
@@ -95,6 +103,16 @@ function usePresetThreshold() {
   range.value = preset.range;
   threshold.value = preset.threshold;
 }
+
+// trocar de preset ou de paleta muda o que conta como estrutura visível
+const coloring = useVolumeColoringStore();
+watch(
+  () =>
+    imageId.value &&
+    coloring.getConfig(viewId.value, imageId.value)?.opacityFunction,
+  () => usePresetThreshold(),
+  { deep: true, flush: 'post' }
+);
 
 watch([open, imageId], ([isOpen]) => {
   mode.value = null;
@@ -232,8 +250,7 @@ function onPointerMove(event: PointerEvent) {
 function finishLasso() {
   const points = path.value;
   const keep = mode.value === 'lasso-keep';
-  // uma passada por vez: depois do corte a vista volta a girar
-  mode.value = null;
+  // o laço continua ligado para o próximo corte (Esc desliga)
   run((where) => lasso(where, points, keep));
 }
 
@@ -321,43 +338,71 @@ function restore() {
     >
       <polygon :points="pathPoints" vector-effect="non-scaling-stroke" />
     </svg>
-    <div v-if="open" class="sculpt-panel" data-testid="sculpt-panel">
+    <button
+      v-if="!open"
+      class="sculpt-tab"
+      data-testid="sculpt-tab"
+      title="Abrir as ferramentas 3D"
+      @click="open = true"
+    >
+      <v-icon size="16">mdi-content-cut</v-icon>
+      Ferramentas 3D
+    </button>
+    <div v-else class="sculpt-panel" data-testid="sculpt-panel">
       <div class="sculpt-title">
-        Esculpir
-        <v-btn
-          icon="mdi-close"
-          size="x-small"
-          variant="text"
-          data-testid="sculpt-close"
-          @click="open = false"
-        />
+        Ferramentas 3D
+        <span class="sculpt-title-actions">
+          <v-btn
+            icon="mdi-undo"
+            size="x-small"
+            variant="text"
+            title="Desfazer"
+            aria-label="Desfazer"
+            :disabled="busy || !summary.undoLevels"
+            data-testid="sculpt-undo"
+            @click="undo"
+          />
+          <v-btn
+            icon="mdi-restore"
+            size="x-small"
+            variant="text"
+            title="Restaurar tudo"
+            aria-label="Restaurar tudo"
+            :disabled="busy || !summary.hiddenVoxels"
+            data-testid="sculpt-restore"
+            @click="restore"
+          />
+          <v-btn
+            icon="mdi-chevron-left"
+            size="x-small"
+            variant="text"
+            title="Recolher"
+            aria-label="Recolher as ferramentas"
+            data-testid="sculpt-close"
+            @click="open = false"
+          />
+        </span>
       </div>
-      <div class="sculpt-tools">
+
+      <div v-for="group in GROUPS" :key="group" class="sculpt-group">
+        <span class="sculpt-group-name">{{ GROUP_TITLE[group] }}</span>
         <v-btn
-          v-for="tool in TOOLS"
+          v-for="tool in toolsIn(group)"
           :key="tool.mode"
-          size="small"
+          stacked
+          size="x-small"
+          class="sculpt-tile"
           :variant="mode === tool.mode ? 'flat' : 'tonal'"
           :color="mode === tool.mode ? 'primary' : undefined"
           :prepend-icon="tool.icon"
+          :title="tool.title"
           :disabled="busy"
           :data-testid="`sculpt-${tool.mode}`"
           @click="toggle(tool.mode)"
         >
-          {{ tool.title }}
+          {{ tool.short }}
         </v-btn>
       </div>
-      <label class="sculpt-label">
-        Densidade mínima da estrutura: <b>{{ threshold }}</b>
-        <input
-          v-model.number="threshold"
-          type="range"
-          :min="range[0]"
-          :max="range[1]"
-          step="5"
-          data-testid="sculpt-threshold"
-        />
-      </label>
       <label v-if="mode === 'brush-remove'" class="sculpt-label">
         Borracha: raio de <b>{{ brushMm }} mm</b>
         <input
@@ -369,50 +414,10 @@ function restore() {
           data-testid="sculpt-brush-size"
         />
       </label>
-      <label class="sculpt-label">
-        Fragmento: até <b>{{ fragmentMl }} cm³</b>
-        <input
-          v-model.number="fragmentMl"
-          type="range"
-          min="0.1"
-          max="30"
-          step="0.1"
-          data-testid="sculpt-fragment-size"
-        />
-      </label>
-      <div class="sculpt-tools">
-        <v-btn
-          size="small"
-          variant="tonal"
-          prepend-icon="mdi-broom"
-          :disabled="busy"
-          data-testid="sculpt-fragments"
-          @click="removeFragmentsNow"
-        >
-          Tirar fragmentos
-        </v-btn>
-        <v-btn
-          size="small"
-          variant="tonal"
-          prepend-icon="mdi-undo"
-          :disabled="busy || !summary.undoLevels"
-          data-testid="sculpt-undo"
-          @click="undo"
-        >
-          Desfazer
-        </v-btn>
-        <v-btn
-          size="small"
-          variant="tonal"
-          prepend-icon="mdi-restore"
-          :disabled="busy || !summary.hiddenVoxels"
-          data-testid="sculpt-restore"
-          @click="restore"
-        >
-          Restaurar tudo
-        </v-btn>
-      </div>
-      <div class="sculpt-tools">
+      <sculpt-highlight :image-id="imageId" />
+
+      <div class="sculpt-section">Limpeza</div>
+      <div class="sculpt-row">
         <v-btn
           size="small"
           variant="tonal"
@@ -423,17 +428,45 @@ function restore() {
         >
           Tirar mesa
         </v-btn>
-        <label class="sculpt-check">
-          <input
-            type="checkbox"
-            :checked="autoTable.enabled"
-            data-testid="sculpt-table-auto"
-            @change="setAutoTable(($event.target as HTMLInputElement).checked)"
-          />
-          sempre, ao abrir
-        </label>
+        <v-btn
+          size="small"
+          variant="tonal"
+          prepend-icon="mdi-broom"
+          :disabled="busy"
+          data-testid="sculpt-fragments"
+          @click="removeFragmentsNow"
+        >
+          Poeira
+        </v-btn>
+        <select
+          v-model.number="fragmentMl"
+          class="sculpt-select"
+          aria-label="Tamanho máximo da poeira"
+          data-testid="sculpt-fragment-size"
+        >
+          <option v-for="ml in DUST_SIZES" :key="ml" :value="ml">
+            até {{ String(ml).replace('.', ',') }} cm³
+          </option>
+        </select>
       </div>
-      <sculpt-highlight :image-id="imageId" />
+      <label class="sculpt-check">
+        <input
+          v-model="smoothing.enabled"
+          type="checkbox"
+          data-testid="sculpt-smooth"
+        />
+        tirar o granulado (suavizar)
+      </label>
+      <label class="sculpt-check">
+        <input
+          type="checkbox"
+          :checked="autoTable.enabled"
+          data-testid="sculpt-table-auto"
+          @change="setAutoTable(($event.target as HTMLInputElement).checked)"
+        />
+        tirar a mesa sempre, ao abrir
+      </label>
+
       <sculpt-bone
         :image-id="imageId"
         :busy="busy"
@@ -441,6 +474,25 @@ function restore() {
         @detect="detectBoneNow"
         @pick="toggle('pick-bone')"
       />
+
+      <button
+        class="sculpt-more"
+        data-testid="sculpt-settings"
+        @click="showSettings = !showSettings"
+      >
+        {{ showSettings ? '▾' : '▸' }} Ajuste fino
+      </button>
+      <label v-if="showSettings" class="sculpt-label">
+        Densidade mínima da estrutura: <b>{{ threshold }}</b>
+        <input
+          v-model.number="threshold"
+          type="range"
+          :min="range[0]"
+          :max="range[1]"
+          step="5"
+          data-testid="sculpt-threshold"
+        />
+      </label>
       <div class="sculpt-status" data-testid="sculpt-status">
         <template v-if="busy">Calculando…</template>
         <template v-else>{{ message || hint }}</template>
@@ -476,14 +528,33 @@ function restore() {
   stroke-dasharray: 6 4;
 }
 
-.sculpt-panel {
+.sculpt-tab {
   position: absolute;
   top: 40px;
   left: 6px;
-  width: 268px;
-  padding: 8px 10px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
   border-radius: 8px;
-  background: rgba(20, 24, 28, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(20, 24, 28, 0.85);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  pointer-events: all;
+}
+
+.sculpt-panel {
+  position: absolute;
+  top: 38px;
+  left: 6px;
+  width: 236px;
+  max-height: calc(100% - 78px);
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+  border-radius: 8px;
+  background: rgba(20, 24, 28, 0.88);
   color: #fff;
   font-size: 12px;
   pointer-events: all;
@@ -497,23 +568,83 @@ function restore() {
   font-size: 13px;
 }
 
-.sculpt-tools {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin: 6px 0;
+.sculpt-title-actions {
+  display: flex;
 }
 
-.sculpt-tools :deep(.v-btn) {
+.sculpt-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.sculpt-group-name {
+  flex: 0 0 52px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.sculpt-tile {
+  flex: 0 0 40px;
+  min-width: 40px !important;
+  height: 40px !important;
+  padding: 0 2px !important;
+  font-size: 9px !important;
   text-transform: none;
   letter-spacing: 0;
-  justify-content: flex-start;
+}
+
+.sculpt-section {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+
+.sculpt-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+}
+
+.sculpt-row :deep(.v-btn) {
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0 8px;
+}
+
+.sculpt-select {
+  flex: 1 1 60px;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  color: #fff;
+  background: #14181c;
+  font-size: 11px;
+}
+
+.sculpt-more {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  cursor: pointer;
 }
 
 .sculpt-check {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-top: 2px;
   color: rgba(255, 255, 255, 0.8);
 }
 

@@ -6,6 +6,8 @@
  * em linha reta. É o mesmo que a curva do VolView faz, mas com nomes, valores
  * em HU e cores escolhidas ponto a ponto.
  */
+import { STOPS, TISSUE_STYLES, type TissueStyle } from './director/render3d';
+
 export interface Stop {
   name: string;
   hu: number;
@@ -21,6 +23,11 @@ export interface Palette {
   stops: Stop[];
   /** criada pela pessoa (pode ser apagada) */
   own?: boolean;
+  /**
+   * opacidade em "quanto apaga por milímetro" (como no diretor de arte), em
+   * vez da opacidade por passo do VolView
+   */
+  extinction?: boolean;
 }
 
 /** Ajuste rápido por cima da paleta (os dois botões do mouse). */
@@ -41,7 +48,34 @@ const stop = (name: string, hu: number, color: string, opacity: number) => ({
   opacity,
 });
 
+const hex = (c: number) =>
+  Math.round(Math.min(1, Math.max(0, c)) * 255)
+    .toString(16)
+    .padStart(2, '0');
+
+const DIRECTOR_TITLES: Record<TissueStyle, [string, string]> = {
+  tecidos: ['diretor-tecidos', 'Diretor: tecidos'],
+  osso: ['diretor-osso', 'Diretor: osso'],
+  vasos: ['diretor-vasos', 'Diretor: vasos'],
+  pulmao: ['diretor-pulmao', 'Diretor: pulmões'],
+};
+
+/** As cores do diretor de arte, como paletas da vista 3D. */
+export const DIRECTOR_PALETTES: Palette[] = TISSUE_STYLES.map((style) => ({
+  id: DIRECTOR_TITLES[style][0],
+  title: DIRECTOR_TITLES[style][1],
+  extinction: true,
+  stops: STOPS[style].map(([hu, r, g, b, alpha]) => ({
+    name: `${hu} UH`,
+    hu,
+    color: `#${hex(r)}${hex(g)}${hex(b)}`,
+    opacity: alpha,
+  })),
+}));
+
 export const PALETTES: Palette[] = [
+  // as do diretor de arte primeiro: é o visual preferido
+  ...DIRECTOR_PALETTES,
   {
     id: 'natural',
     title: 'Natural',
@@ -168,13 +202,23 @@ export function sanitizePalette(raw: unknown): Palette | null {
   };
 }
 
-/** A paleta com o ajuste rápido aplicado. */
-export function tweaked(palette: Palette, tweak: Tweak): Stop[] {
-  return sortedStops(palette.stops).map((item) => ({
-    ...item,
-    hu: item.hu + tweak.shift,
-    opacity: clamp(item.opacity * tweak.gain, 0, 1),
-  }));
+/**
+ * A paleta com o ajuste rápido aplicado. Com `extinction`, a opacidade da
+ * paleta é "quanto apaga por mm" e vira opacidade por 1 mm de caminho.
+ */
+export function tweaked(
+  palette: Palette,
+  tweak: Tweak,
+  extinction = false
+): Stop[] {
+  return sortedStops(palette.stops).map((item) => {
+    const scaled = item.opacity * tweak.gain;
+    return {
+      ...item,
+      hu: item.hu + tweak.shift,
+      opacity: clamp(extinction ? 1 - Math.exp(-scaled) : scaled, 0, 1),
+    };
+  });
 }
 
 type Range = [number, number];

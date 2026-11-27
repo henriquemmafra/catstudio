@@ -17,12 +17,12 @@ import {
 } from '@/src/catstudio/director/volume';
 
 /** Ponto da função de transferência: densidade (UH) → cor e opacidade por mm. */
-type Stop = [hu: number, r: number, g: number, b: number, alpha: number];
+export type Stop = [hu: number, r: number, g: number, b: number, alpha: number];
 
 export const TISSUE_STYLES = ['tecidos', 'osso', 'vasos', 'pulmao'] as const;
 export type TissueStyle = (typeof TISSUE_STYLES)[number];
 
-const STOPS: Record<TissueStyle, Stop[]> = {
+export const STOPS: Record<TissueStyle, Stop[]> = {
   // face do corte legível: tudo o que não é ar fica opaco em poucos mm
   tecidos: [
     [-600, 0.86, 0.6, 0.56, 0],

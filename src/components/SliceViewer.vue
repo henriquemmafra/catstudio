@@ -53,7 +53,7 @@
           :view-direction="viewDirection"
           :view-up="viewUp"
         >
-          <vtk-slice-view-navigation />
+          <vtk-slice-view-navigation right-scroll />
           <vtk-slice-view-slicing-manipulator
             :view-id="viewId"
             :image-id="currentImageID"

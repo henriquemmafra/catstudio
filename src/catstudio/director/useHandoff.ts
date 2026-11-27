@@ -11,7 +11,7 @@ import { useToolStore } from '@/src/store/tools';
 import { Tools } from '@/src/store/tools/types';
 import { cropRotations, resetBoxRotation } from '@/src/catstudio/cropRotation';
 import { allPalettes, applyPalette } from '@/src/catstudio/paletteStore';
-import { lightLook } from '@/src/catstudio/lightLook';
+import { choosePreset, lightLook } from '@/src/catstudio/lightLook';
 import { baseImageOf } from '@/src/catstudio/sculpt/useSculptedImage';
 import { resetSculpt } from '@/src/catstudio/sculpt/state';
 import { keepRegion } from '@/src/catstudio/sculpt/tools';
@@ -117,6 +117,8 @@ export function useHandoff(
           palette
         );
       lightLook.background = request.background;
+      // a luz do diretor também, para o 3D ficar com a cara da imagem dele
+      choosePreset('diretor');
       crop(request);
       keepOnly(target, request);
       aim(target, request.camera);

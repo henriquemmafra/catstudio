@@ -7,9 +7,17 @@ import { computed, nextTick, ref, toRefs } from 'vue';
 import type { Maybe } from '@/src/types';
 import type { VtkViewApi } from '@/src/types/vtk-types';
 import { LAYERS, LAYER_TITLE, type Layer } from '@/src/catstudio/sculpt/layers';
-import { layerViews, setLayerVisible } from '@/src/catstudio/sculpt/state';
+import {
+  layerViews,
+  setLayerVisible,
+  undoSculpt,
+} from '@/src/catstudio/sculpt/state';
 import { baseImageOf } from '@/src/catstudio/sculpt/useSculptedImage';
-import { computeLayers } from '@/src/catstudio/sculpt/tools';
+import {
+  computeLayers,
+  fragments,
+  presetThreshold,
+} from '@/src/catstudio/sculpt/tools';
 
 interface Props {
   view: Maybe<VtkViewApi>;
@@ -67,6 +75,39 @@ function openBar() {
   if (!layers.value && !busy.value) prepare();
 }
 
+const DUST_SIZES = [0.5, 1, 3, 10];
+const dustMl = ref(1);
+
+/** Tira a "poeira": pedacinhos soltos, contando as camadas escondidas. */
+async function cleanDust() {
+  const id = imageId.value;
+  const base = id ? baseImageOf(id) : null;
+  if (!id || !base || !view.value) return;
+  busy.value = true;
+  message.value = 'Limpando…';
+  await nextTick();
+  await new Promise((resolve) => {
+    setTimeout(resolve, 30);
+  });
+  try {
+    const size = view.value.renderWindowView.getSize();
+    const where = {
+      view: view.value,
+      imageID: id,
+      base,
+      aspect: size[0] / Math.max(size[1], 1),
+    };
+    const { threshold } = presetThreshold(view.value, base);
+    message.value = fragments(where, threshold, dustMl.value);
+  } finally {
+    busy.value = false;
+  }
+}
+
+function undoDust() {
+  if (imageId.value && undoSculpt(imageId.value)) message.value = 'Desfeito.';
+}
+
 function toggle(layer: Layer) {
   const id = imageId.value;
   if (!id || !layers.value) return;
@@ -119,6 +160,38 @@ defineExpose({ prepare, openBar });
     >
       Separar tecidos
     </v-btn>
+    <span v-if="layers" class="layer-dust">
+      <v-btn
+        size="x-small"
+        variant="flat"
+        color="#ffd166"
+        prepend-icon="mdi-broom"
+        :loading="busy"
+        data-testid="layer-dust"
+        title="Tira os pedacinhos soltos (poeira) do que está visível"
+        @click="cleanDust"
+      >
+        Limpar poeira
+      </v-btn>
+      <select
+        v-model.number="dustMl"
+        class="layer-dust-size"
+        aria-label="Tamanho máximo da poeira"
+        data-testid="layer-dust-size"
+      >
+        <option v-for="ml in DUST_SIZES" :key="ml" :value="ml">
+          até {{ String(ml).replace('.', ',') }} cm³
+        </option>
+      </select>
+      <v-btn
+        icon="mdi-undo"
+        size="x-small"
+        variant="text"
+        aria-label="Desfazer a última limpeza"
+        data-testid="layer-dust-undo"
+        @click="undoDust"
+      />
+    </span>
     <span v-if="message" class="layer-message" data-testid="layer-message">{{
       message
     }}</span>
@@ -183,6 +256,28 @@ defineExpose({ prepare, openBar });
 
 .layer-pill:hover {
   background: rgba(40, 46, 54, 0.95);
+}
+
+.layer-dust {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.layer-dust :deep(.v-btn) {
+  color: #14181c !important;
+}
+
+.layer-dust-size {
+  padding: 1px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  color: #fff;
+  background: #14181c;
+  font-size: 11px;
 }
 
 .layer-message {

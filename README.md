@@ -87,6 +87,10 @@ uma cópia em que o que foi apagado vira ar.
   acontecer sozinho em todo exame (a escolha fica guardada no navegador).
 - **Desfazer** (12 níveis) e **Restaurar tudo**.
 
+**Passar os cortes com o botão direito**: nas vistas 2D, segure o botão
+direito e arraste para cima ou para baixo (a altura da vista percorre o exame
+todo). O zoom com o direito passou para Ctrl + direito; a roda continua igual.
+
 **Janela do 3D com os dois botões do mouse**: com o esquerdo e o direito
 apertados juntos, arrastar para cima/baixo anda a curva de opacidade para
 tecidos menos/mais densos, e para a direita/esquerda deixa mais/menos opaco.
@@ -96,8 +100,11 @@ Tirar mesa também é heurística e só foi testada em fantoma: corta contatos
 de até 2 voxels entre corpo e mesa (roupa, lençol); um braço ao lado do corpo
 sem encostar nele sai junto com a mesa; desfaça se errar.
 
-**Girar a caixa de corte**: com a ferramenta de recorte ligada, aparece
-"Girar caixa" no alto da vista 3D. Marcado, arrastar com o botão esquerdo
+**Girar a caixa de corte**: com a ferramenta de recorte ligada, aparecem no
+alto da vista 3D: **De frente para a tela** (gire o exame até o ângulo que
+quiser e clique — a caixa fica de frente para a tela e o corte, paralelo a
+ela), ↺ ↻ (15° em torno da linha de visão) e **Ctrl + arrastar** (gira a
+caixa sem precisar ligar nada). Também há "Girar caixa". Marcado, arrastar com o botão esquerdo
 gira a caixa em torno do centro do exame (o exame e a câmera ficam parados);
 as alças continuam funcionando na caixa girada. "Alinhar" volta ao exame. A
 rotação vale só no 3D: as linhas de corte das vistas 2D continuam mostrando a
@@ -160,6 +167,18 @@ paleta por tecido mais parecida e a cor do fundo. Com "só os pulmões", o resto
 do corpo fica escondido pela escultura (dá para desfazer). Daí em diante
 valem todas as ferramentas do 3D. Reabrir o diretor no mesmo exame continua
 de onde parou.
+
+### Visual do diretor na vista 3D
+
+As cores do diretor de arte viraram paletas da vista 3D (**Diretor: tecidos,
+osso, vasos, pulmões**, as primeiras da lista em Cores por tecido), com a
+opacidade medida por milímetro, como no diretor. O preset de luz **Diretor**
+usa a mesma luz (do observador, do alto e da esquerda, sem brilho) e calcula o
+relevo pela opacidade, o que deixa a face do corte lisa, sem o granulado.
+"Editar no 3D" já usa os dois.
+
+**Limpar poeira** fica também na barra de camadas e leva em conta o que está
+escondido: o que sobra solto depois de esconder os músculos sai como poeira.
 
 ### Iluminação, fundo e exportação em alta
 

@@ -127,3 +127,84 @@ export function useBoxPlanes(imageID: MaybeRef<Maybe<string>>) {
     );
   });
 }
+
+type Basis = [Vec3, Vec3, Vec3];
+
+const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const det3 = (m: Basis) =>
+  dot3(m[0], [
+    m[1][1] * m[2][2] - m[1][2] * m[2][1],
+    m[1][2] * m[2][0] - m[1][0] * m[2][2],
+    m[1][0] * m[2][1] - m[1][1] * m[2][0],
+  ]);
+
+/** O eixo da caixa (com sinal) mais alinhado com `target`, fora os usados. */
+function closestAxis(axes: Basis, target: Vec3, used: Set<number>): Vec3 {
+  let best = { k: -1, score: -1, sign: 1 };
+  axes.forEach((axis, k) => {
+    if (used.has(k)) return;
+    const d = dot3(axis, target);
+    if (Math.abs(d) > best.score)
+      best = { k, score: Math.abs(d), sign: Math.sign(d) || 1 };
+  });
+  used.add(best.k);
+  const axis = axes[best.k];
+  return [axis[0] * best.sign, axis[1] * best.sign, axis[2] * best.sign];
+}
+
+/**
+ * Rotação (em torno de `pivot`) que deixa a caixa de frente para a tela:
+ * cada face fica paralela à tela ou de perfil. Cada eixo da caixa vai para a
+ * direção da câmera mais próxima dele, então o giro é o menor possível.
+ */
+export function screenRotation(
+  camera: { up: Vec3; direction: Vec3 },
+  axes: Basis,
+  pivot: Vec3
+): Matrix {
+  const back = vec3.normalize(vec3.create(), [
+    -camera.direction[0],
+    -camera.direction[1],
+    -camera.direction[2],
+  ]);
+  const right = vec3.normalize(
+    vec3.create(),
+    vec3.cross(vec3.create(), camera.up, back)
+  );
+  const up = vec3.cross(vec3.create(), back, right);
+  const targets: Basis = [
+    [right[0], right[1], right[2]],
+    [up[0], up[1], up[2]],
+    [back[0], back[1], back[2]],
+  ];
+  // primeiro o eixo de profundidade, depois o vertical, por último o lateral
+  const used = new Set<number>();
+  const picked: Basis = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  [2, 1, 0].forEach((t) => {
+    picked[t] = closestAxis(axes, targets[t], used);
+  });
+  // mesma orientação (mão direita) dos dois lados; uma caixa espelhada é a mesma
+  if (Math.sign(det3(picked)) !== Math.sign(det3(targets)))
+    targets[0] = [-targets[0][0], -targets[0][1], -targets[0][2]];
+  // R = alvos · escolhidos^T (leva cada eixo escolhido ao seu alvo)
+  const turn = mat4.create();
+  for (let r = 0; r < 3; r++)
+    for (let c = 0; c < 3; c++)
+      turn[4 * c + r] = targets.reduce(
+        (sum, t, n) => sum + t[r] * picked[n][c],
+        0
+      );
+  const out = mat4.create();
+  mat4.translate(out, out, pivot);
+  mat4.multiply(out, out, turn);
+  mat4.translate(out, out, [-pivot[0], -pivot[1], -pivot[2]]);
+  return Array.from(out);
+}
+
+export function setBoxRotation(imageID: string, rotation: Matrix) {
+  cropRotations[imageID] = rotation;
+}
