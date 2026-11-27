@@ -108,7 +108,7 @@
               size="medium"
               variant="text"
               data-testid="open-layers"
-              @click="layersOpen = !layersOpen"
+              @click="toggleLayers"
             >
               <v-icon size="medium" class="py-1 view-control-icon">
                 mdi-layers-outline
@@ -185,6 +185,7 @@
         </template>
       </view-overlay-grid>
       <layer-bar
+        ref="layerBarRef"
         v-model:open="layersOpen"
         :view="vtkView"
         :image-id="currentImageID"
@@ -239,6 +240,11 @@ interface VolumeViewerOptions {
 const vtkView = ref<VtkViewApi>();
 const sculptOpen = ref(false);
 const layersOpen = ref(false);
+const layerBarRef = ref<{ openBar: () => void } | null>(null);
+function toggleLayers() {
+  if (layersOpen.value) layersOpen.value = false;
+  else layerBarRef.value?.openBar();
+}
 const rootEl = ref<HTMLElement>();
 
 const props = defineProps<Props>();

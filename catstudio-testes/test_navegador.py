@@ -1313,8 +1313,7 @@ def test_camadas_e_destaque_segurando_o_cursor(session):
     page.get_by_text("RENDERIZAÇÃO").first.click()
     page.get_by_text("Cores por tecido").first.click()
     page.get_by_test_id("palette-musculo").click()
-    page.get_by_test_id("open-layers").click()
-    page.get_by_test_id("layer-prepare").click()
+    page.get_by_test_id("layer-pill").click()
     page.wait_for_function(
         "() => document.querySelector('[data-testid=layer-osso]')", timeout=60000)
     ids = f"[...{PINIA}._s.get('image-cache').imageIds][0]"

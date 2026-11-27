@@ -61,17 +61,33 @@ async function prepare() {
   }
 }
 
+/** Abrir já separa os tecidos (um clique a menos). */
+function openBar() {
+  open.value = true;
+  if (!layers.value && !busy.value) prepare();
+}
+
 function toggle(layer: Layer) {
   const id = imageId.value;
   if (!id || !layers.value) return;
   setLayerVisible(id, layer, !layers.value.visible[layer]);
 }
 
-defineExpose({ prepare });
+defineExpose({ prepare, openBar });
 </script>
 
 <template>
-  <div v-if="open" class="layer-bar" data-testid="layer-bar">
+  <button
+    v-if="!open"
+    class="layer-pill"
+    data-testid="layer-pill"
+    title="Mostrar ou esconder pele, gordura, músculos, vasos, osso e o que está fora do corpo"
+    @click="openBar"
+  >
+    <v-icon size="16">mdi-layers-outline</v-icon>
+    Camadas: pele · músculos · vasos · osso
+  </button>
+  <div v-else class="layer-bar" data-testid="layer-bar">
     <template v-if="layers">
       <v-btn
         v-for="layer in LAYERS"
@@ -144,6 +160,29 @@ defineExpose({ prepare });
 .layer-bar .off {
   opacity: 0.6;
   text-decoration: line-through;
+}
+
+.layer-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 209, 102, 0.6);
+  background: rgba(20, 24, 28, 0.85);
+  color: #ffd166;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.layer-pill:hover {
+  background: rgba(40, 46, 54, 0.95);
 }
 
 .layer-message {
