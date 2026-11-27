@@ -91,6 +91,16 @@ uma cópia em que o que foi apagado vira ar.
 (com os vasos e brônquios de dentro) e põe as cores de pulmão do diretor de
 arte. Desfazer traz o resto de volta.
 
+**Só coração**: ao lado de "Só pulmões". Procura o maior bloco de partes
+moles entre os dois pulmões; vem junto a raiz dos grandes vasos e, embaixo,
+pode vir uma fatia do fígado. É ponto de partida para acertar com a borracha.
+
+**Osso no tórax**: com os pulmões achados, o que é denso na parede (costela,
+esterno, escápula, clavícula) conta como osso mesmo fino e em volume reduzido;
+e a coluna encostada num vaso contrastado é separada dele quando o contato é
+fino. Contraste denso na veia do braço/subclávia pode entrar como osso: o
+clique "Osso sim/não" corrige.
+
 **GIF do 3D girando**: Exportar > "GIF girando…". Giro (um sentido) ou vaivém,
 90, 180 ou 360°, eixo vertical (gira de lado, o padrão) ou horizontal (tomba);
 tamanho e velocidade à escolha. Nos arcos de 90° e 180° a vista atual fica no

@@ -78,7 +78,8 @@ function insideLabel(hu: number, isBone: boolean): number {
 export function classify(
   grid: Pick<Grid, 'dims' | 'scalars'>,
   spacing: number,
-  voxelMm3 = spacing ** 3
+  voxelMm3 = spacing ** 3,
+  zone?: (index: number) => number
 ): LayerSet {
   const { dims, scalars } = grid;
   const total = dims[0] * dims[1] * dims[2];
@@ -93,7 +94,7 @@ export function classify(
   for (let n = 0; n < peel; n++) core = erode(core, dims);
   // estruturas menores que 1 cm³ não são avaliadas como osso
   const minVoxels = Math.max(20, Math.ceil(1000 / voxelMm3));
-  const bone = detectBone(free, { low: BONE_LOW, minVoxels });
+  const bone = detectBone(free, { low: BONE_LOW, minVoxels, zone });
   const labels = new Uint8Array(total);
   const counts = Object.fromEntries(LAYERS.map((l) => [l, 0])) as Record<
     Layer,

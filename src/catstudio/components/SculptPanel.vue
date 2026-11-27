@@ -39,7 +39,12 @@ import {
 import useVolumeColoringStore from '@/src/store/view-configs/volume-coloring';
 import SculptBone from '@/src/catstudio/components/SculptBone.vue';
 import SculptOptions from '@/src/catstudio/components/SculptOptions.vue';
-import { keepLungs, LUNG_PALETTE } from '@/src/catstudio/sculpt/lungs';
+import SculptOrgans from '@/src/catstudio/components/SculptOrgans.vue';
+import {
+  keepHeart,
+  keepLungs,
+  LUNG_PALETTE,
+} from '@/src/catstudio/sculpt/lungs';
 import { allPalettes, applyPalette } from '@/src/catstudio/paletteStore';
 import { choosePreset } from '@/src/catstudio/lightLook';
 import SculptHighlight from '@/src/catstudio/components/SculptHighlight.vue';
@@ -305,6 +310,7 @@ const removeFragmentsNow = () =>
 
 const detectBoneNow = () => run(findBone);
 const removeTableNow = () => run(removeTable);
+const heartOnlyNow = () => run(keepHeart);
 
 /** Um clique: esconde tudo menos os pulmões e põe as cores de pulmão. */
 const lungsOnlyNow = () =>
@@ -426,19 +432,7 @@ function restore() {
       </label>
       <sculpt-highlight :image-id="imageId" />
 
-      <div class="sculpt-row">
-        <v-btn
-          size="small"
-          variant="tonal"
-          prepend-icon="mdi-lungs"
-          :disabled="busy"
-          title="Esconde tudo menos os pulmões e usa as cores de pulmão"
-          data-testid="sculpt-lungs"
-          @click="lungsOnlyNow"
-        >
-          Só pulmões
-        </v-btn>
-      </div>
+      <sculpt-organs :busy="busy" @lungs="lungsOnlyNow" @heart="heartOnlyNow" />
 
       <div class="sculpt-section">Limpeza</div>
       <div class="sculpt-row">

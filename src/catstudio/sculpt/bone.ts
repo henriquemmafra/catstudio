@@ -6,8 +6,17 @@
  * densa junto com medular menos densa. Um vaso contrastado é denso mas
  * homogêneo, então fica de fora — a não ser que encoste no osso, caso em que
  * os dois formam uma estrutura só. Por isso existe o clique para corrigir.
+ *
+ * Dois reforços:
+ *  - com os pulmões achados (`zone`), o que é denso na parede do tórax é
+ *    osso mesmo sem cara de osso: costela fina, em volume reduzido, não tem
+ *    cortical densa o bastante para passar no teste acima;
+ *  - uma estrutura reprovada (coluna encostada na aorta contrastada, por
+ *    exemplo) é afinada uma camada para desfazer o contato, e cada pedaço é
+ *    avaliado de novo.
  */
 import { type Fill, type Grid, flood, newFill } from './mask';
+import { dilateWithin, erode } from './body';
 
 /** Rótulos: 0 = não é osso, 1 = osso, 2 = franja (borda de volume parcial) */
 export type BoneLabel = Uint8Array;
@@ -17,7 +26,13 @@ export interface BoneOptions {
   low: number;
   /** estruturas menores que isto não são avaliadas (calcificações, clipes) */
   minVoxels: number;
+  /** zona do voxel no tórax: 1 = parede (ver chest.ts); sem isto, não usa */
+  zone?: (index: number) => number;
 }
+
+/** a partir desta fração de voxels na parede, a estrutura inteira é osso */
+export const WALL_SHARE = 0.6;
+const WALL = 1;
 
 export const BONE_LOW = 200;
 /** percentil 95 pelo menos este tanto acima do limiar… */
@@ -103,23 +118,134 @@ export interface BoneResult {
   voxels: number;
 }
 
+/** Quantos voxels da estrutura na fila estão na parede do tórax. */
+function wallCount(fill: Fill, count: number, zone: BoneOptions['zone']) {
+  if (!zone) return 0;
+  let wall = 0;
+  for (let n = 0; n < count; n++)
+    if (zone(fill.queue.data[n]) === WALL) wall += 1;
+  return wall;
+}
+
+/** Marca como osso só os voxels da estrutura que estão na parede. */
+function labelWall(fill: Fill, count: number, pass: Pass): number {
+  const { zone } = pass.options;
+  if (!zone) return 0;
+  let marked = 0;
+  for (let n = 0; n < count; n++) {
+    const index = fill.queue.data[n];
+    if (zone(index) !== WALL) continue;
+    pass.result.label[index] = 1;
+    marked += 1;
+  }
+  return marked;
+}
+
+/** pedaço homogêneo a partir deste tamanho (× minVoxels) é vaso, não medular */
+const SOFT_PIECE = 30;
+
+interface Pass {
+  options: BoneOptions;
+  result: BoneResult;
+  /** a que estrutura densa avaliada cada voxel pertence (0 = nenhuma) */
+  owner: Int32Array;
+  /** por estrutura: tem cara de osso? */
+  boneLike: boolean[];
+  /** por estrutura: algum pedaço dela, afinada, tem cara de osso? */
+  hasHard: boolean[];
+}
+
+/** Avalia a estrutura que está na fila de `fill`. */
+function judge(fill: Fill, count: number, pass: Pass) {
+  const { options, result } = pass;
+  const wall = wallCount(fill, count, options.zone);
+  const mostlyWall = wall >= WALL_SHARE * count;
+  // na parede, pedaços pequenos também contam (costela fragmentada)
+  if (count < (mostlyWall ? options.minVoxels / 8 : options.minVoxels)) return;
+  if (mostlyWall) {
+    setLabel(fill, count, result.label, 1);
+    result.components += 1;
+    return;
+  }
+  labelWall(fill, count, pass);
+  const id = pass.boneLike.length;
+  for (let n = 0; n < count; n++) pass.owner[fill.queue.data[n]] = id;
+  pass.boneLike.push(looksLikeBone(fill, count, options.low));
+  pass.hasHard.push(false);
+  if (pass.boneLike[id]) result.components += 1;
+}
+
+/**
+ * Confere as estruturas densas por dentro: tira uma camada (desfaz os
+ * contatos finos, como o da coluna com a aorta contrastada) e avalia cada
+ * pedaço. Devolve os pedaços com cara de osso e os homogêneos grandes
+ * (vasos), já com a camada de volta.
+ */
+function pieces(grid: Grid, pass: Pass) {
+  const { options, owner } = pass;
+  const dense = new Uint8Array(owner.length);
+  for (let index = 0; index < dense.length; index++)
+    dense[index] = owner[index] ? 1 : 0;
+  const thin = erode(dense, grid.dims);
+  const fill = newFill({ ...grid, scalars: thin }, 1);
+  // a cara de osso é medida na densidade de verdade
+  const real = { ...fill, grid };
+  let hard: Uint8Array = new Uint8Array(dense.length);
+  let soft: Uint8Array = new Uint8Array(dense.length);
+  for (let index = 0; index < thin.length; index++) {
+    const count = flood(fill, index);
+    if (count < options.minVoxels / 2) continue;
+    const isBone = looksLikeBone(real, count, options.low);
+    if (isBone) pass.hasHard[owner[index]] = true;
+    else if (count < SOFT_PIECE * options.minVoxels) continue;
+    setLabel(fill, count, isBone ? hard : soft, 1);
+  }
+  for (let layer = 0; layer < 2; layer++) {
+    hard = dilateWithin(hard, dense, grid.dims);
+    soft = dilateWithin(soft, dense, grid.dims);
+  }
+  return { hard, soft };
+}
+
+/**
+ * Osso = os pedaços duros, mais as estruturas com cara de osso, menos os
+ * pedaços de vaso de uma estrutura que também tem pedaço duro (se nenhum
+ * pedaço é duro, a estrutura fica como foi avaliada inteira).
+ */
+function settle(grid: Grid, pass: Pass) {
+  const { label } = pass.result;
+  const { hard, soft } = pieces(grid, pass);
+  let voxels = 0;
+  for (let index = 0; index < label.length; index++) {
+    const id = pass.owner[index];
+    const vessel = soft[index] && pass.hasHard[id];
+    if (hard[index] || (pass.boneLike[id] && !vessel)) label[index] = 1;
+    voxels += label[index];
+  }
+  pass.result.voxels = voxels;
+}
+
 export function detectBone(grid: Grid, options: BoneOptions): BoneResult {
   const fill = newFill(grid, options.low);
-  const result: BoneResult = {
-    label: new Uint8Array(grid.hidden.length),
-    components: 0,
-    voxels: 0,
+  const pass: Pass = {
+    options,
+    result: {
+      label: new Uint8Array(grid.hidden.length),
+      components: 0,
+      voxels: 0,
+    },
+    owner: new Int32Array(grid.hidden.length),
+    // a estrutura 0 é "nenhuma"
+    boneLike: [false],
+    hasHard: [false],
   };
   for (let index = 0; index < grid.hidden.length; index++) {
     const count = flood(fill, index);
-    if (count < options.minVoxels) continue;
-    if (!looksLikeBone(fill, count, options.low)) continue;
-    setLabel(fill, count, result.label, 1);
-    result.components += 1;
-    result.voxels += count;
+    if (count) judge(fill, count, pass);
   }
-  refringe(grid, result.label, options.low);
-  return result;
+  settle(grid, pass);
+  refringe(grid, pass.result.label, options.low);
+  return pass.result;
 }
 
 /**

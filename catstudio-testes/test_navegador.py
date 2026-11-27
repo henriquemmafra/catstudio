@@ -944,8 +944,9 @@ def test_botao_tela_inicial_fecha_o_exame(session):
 
 def test_osso_translucido_escondido_e_crescer_segurando(session):
     """Detectar osso, deixá-lo translúcido e escondê-lo; e a ferramenta de
-    crescer enquanto o botão fica apertado. (No fantoma, a "estrutura
-    heterogênea" que a heurística chama de osso é a esfera da direita.)"""
+    crescer enquanto o botão fica apertado. (No fantoma, osso é a esfera
+    da direita, heterogênea, mais o que é denso na parede do tórax: a coluna
+    e o marcador anterior. O cubo e o elipsoide dentro do pulmão ficam.)"""
     page = session.page
     session.open_files(files_of("ax_main"))
     page.wait_for_timeout(5000)
@@ -958,7 +959,7 @@ def test_osso_translucido_escondido_e_crescer_segurando(session):
 
     page.get_by_test_id("sculpt-bone-detect").click()
     page.wait_for_timeout(2500)
-    assert "Osso: 1 estrutura" in _sculpt_status(page), _sculpt_status(page)
+    assert "Osso: 3 estrutura" in _sculpt_status(page), _sculpt_status(page)
     page.get_by_test_id("sculpt-bone-opacity").fill("30")
     translucido = _sculpt_shot(page, view)
     assert esfera(translucido, 60) < 0.5 * esfera(inteiro, 60)   # mais fraca…
@@ -967,9 +968,8 @@ def test_osso_translucido_escondido_e_crescer_segurando(session):
     assert page.get_by_test_id("sculpt-bone-label").inner_text() == "escondido"
     escondido = _sculpt_shot(page, view)
     assert esfera(escondido, 25) == 0
-    esquerda = slice(0, meio - 6)
-    resto = lambda im: int((im[60:-60, esquerda] > 60).sum())
-    assert resto(escondido) > 0.9 * resto(inteiro)                # o resto fica
+    resto = lambda im: int((im[60:-60] > 60).sum())
+    assert 0 < resto(escondido) < resto(inteiro)                  # o que não é osso fica
     page.get_by_test_id("sculpt-bone-forget").click()
     assert esfera(_sculpt_shot(page, view), 60) > 0.9 * esfera(inteiro, 60)
 
@@ -1633,4 +1633,18 @@ def test_so_pulmoes_com_um_clique(session):
     assert so_pulmao.std() > 2  # sobrou alguma coisa para ver
     page.get_by_test_id("sculpt-undo").click()
     assert "Desfeito" in _sculpt_status(page)
+    assert not session.errors, session.errors
+
+
+def test_so_coracao_responde(session):
+    """"Só coração" procura o coração entre os pulmões; no fantoma (que não
+    tem coração) pode não achar, mas responde com uma frase e sem erro."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    _open_sculpt(page)
+    page.get_by_test_id("sculpt-heart").click()
+    page.wait_for_function(
+        "() => /cora/.test(document.querySelector('[data-testid=sculpt-status]')?.textContent ?? '')",
+        timeout=60000)
     assert not session.errors, session.errors

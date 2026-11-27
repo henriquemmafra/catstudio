@@ -33,6 +33,7 @@ import {
 } from './state';
 import { type Grower, grownVoxels, growLayers, startGrow } from './grow';
 import { BONE_LOW, countBone, detectBone, toggleBone } from './bone';
+import { chestZoneOf } from './chestImage';
 import { removeOutsideBody } from './body';
 import { classify } from './layers';
 import { hiddenOf as hiddenNow, union } from './useSculptedImage';
@@ -321,7 +322,8 @@ export function startGrowStroke(
 export function findBone(target: SculptTarget): string {
   const grid = gridOf(target, hiddenOf(target));
   const minVoxels = Math.ceil(1 / volumeMl(target.base, 1));
-  const result = detectBone(grid, { low: BONE_LOW, minVoxels });
+  const zone = chestZoneOf(target.base);
+  const result = detectBone(grid, { low: BONE_LOW, minVoxels, zone });
   if (!result.voxels)
     return 'Não achei osso. Marque à mão com "Clique: osso sim/não".';
   setBone(target.imageID, { dims: grid.dims, ...result });
@@ -362,7 +364,8 @@ export function computeLayers(target: SculptTarget): string {
   const set = classify(
     { dims, scalars: target.base.getPointData().getScalars().getData() },
     Math.max(...target.base.getSpacing()),
-    volumeMl(target.base, 1) * 1000
+    volumeMl(target.base, 1) * 1000,
+    chestZoneOf(target.base)
   );
   setLayers(target.imageID, set);
   if (!boneOf(target.imageID, dims) && set.boneVoxels)

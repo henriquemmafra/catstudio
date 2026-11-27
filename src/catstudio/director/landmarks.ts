@@ -71,14 +71,14 @@ export interface Landmarks {
   notes: string[];
 }
 
-interface Grid {
+export interface Grid {
   n: Vec3;
   min: Vec3;
   step: number;
   hu: Int16Array;
 }
 
-function coarseGrid(vol: WorldVolume, step: number): Grid {
+export function coarseGrid(vol: WorldVolume, step: number): Grid {
   const [min, max] = bounds(vol);
   const n = [0, 1, 2].map((a) =>
     Math.max(1, Math.floor((max[a] - min[a]) / step) + 1)
@@ -145,7 +145,7 @@ function outsideAir({ n, hu }: Grid): Uint8Array {
  * Componentes conexos (6 vizinhos) dos voxels que passam em `wanted`; devolve
  * o rótulo de cada voxel (0 = fora) e o tamanho de cada componente.
  */
-function components(grid: Grid, wanted: (o: number) => boolean) {
+export function components(grid: Grid, wanted: (o: number) => boolean) {
   const [nx, ny, nz] = grid.n;
   const slice = nx * ny;
   const labels = new Int32Array(grid.hu.length);
@@ -184,7 +184,7 @@ function components(grid: Grid, wanted: (o: number) => boolean) {
 }
 
 /** Rótulo do maior componente (0 se não houver nenhum). */
-const largestLabel = (sizes: number[]) =>
+export const largestLabel = (sizes: number[]) =>
   sizes.reduce((best, size, label) => (size > sizes[best] ? label : best), 0);
 
 const percentile = (sorted: number[], p: number) =>
