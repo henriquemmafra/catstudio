@@ -16,6 +16,9 @@ import {
   boneModeFor,
   boneOf,
   boneViews,
+  highlightOf,
+  highlightViews,
+  layersOf,
   sculptOf,
   sculptVersions,
 } from './state';
@@ -96,13 +99,41 @@ interface Plan {
   layers: Layers;
 }
 
+/** União de duas máscaras (qualquer uma pode faltar). */
+export function union(
+  a: Uint8Array | null,
+  b: Uint8Array | null
+): Uint8Array | null {
+  if (!a || !b) return a ?? b;
+  const out = new Uint8Array(a.length);
+  for (let i = 0; i < out.length; i++) out[i] = a[i] | b[i];
+  return out;
+}
+
+/** O que está escondido: a escultura mais as camadas desligadas. */
+export function hiddenOf(imageID: string, dims: Dims): Uint8Array | null {
+  const sculpt = sculptOf(imageID, dims);
+  return union(
+    sculpt?.count ? sculpt.hidden : null,
+    layersOf(imageID, dims)?.hidden ?? null
+  );
+}
+
+/**
+ * O segundo componente do volume (quando há) é o destaque, se houver um;
+ * senão, o osso translúcido.
+ */
+export const focusOf = (imageID: string): 'destaque' | 'osso' =>
+  (highlightViews[imageID]?.voxels ?? 0) > 0 ? 'destaque' : 'osso';
+
 /** O que precisa mudar no volume deste exame; null = desenhar o original. */
 function planFor(imageID: string, image: vtkImageData): Plan | null {
   const dims = image.getDimensions() as Dims;
-  const sculpt = sculptOf(imageID, dims);
+  const hidden = hiddenOf(imageID, dims);
+  const highlight = highlightOf(imageID, dims);
+  if (highlight) return { mode: 'split', layers: { hidden, bone: highlight } };
   const label = boneOf(imageID, dims);
   const mode = label ? boneModeFor(boneViews[imageID]?.opacity ?? 1) : 'none';
-  const hidden = sculpt?.count ? sculpt.hidden : null;
   if (!hidden && mode === 'none') return null;
   return { mode, layers: { hidden, bone: mode === 'none' ? null : label } };
 }

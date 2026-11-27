@@ -1299,3 +1299,60 @@ def test_diretor_anda_pelos_cortes_sem_esperar_e_isola_pulmoes(session):
     # aparecem os pulmões, mas o mediastino (no meio) fica vazio
     assert cores["lit"] > 0.05 and cores["center"] < 0.3, cores
     assert not session.errors, session.errors
+
+
+def test_camadas_e_destaque_segurando_o_cursor(session):
+    """Separar tecidos cria os botões de camada; esconder "Músculos e órgãos"
+    tira o corpo e deixa as estruturas densas; esconder "Osso" tira o osso.
+    "Crescer: destacar" pinta o que cresce de vermelho e deixa o resto mais
+    apagado."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    page.get_by_text("RENDERIZAÇÃO").first.click()
+    page.get_by_text("Cores por tecido").first.click()
+    page.get_by_test_id("palette-musculo").click()
+    page.get_by_test_id("open-layers").click()
+    page.get_by_test_id("layer-prepare").click()
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=layer-osso]')", timeout=60000)
+    ids = f"[...{PINIA}._s.get('image-cache').imageIds][0]"
+    contagem = page.evaluate(f"() => __catstudio.layers({ids}).counts")
+    assert all(contagem[c] > 0 for c in ["fora", "pele", "gordura", "moles", "osso"]), contagem
+
+    def claros():
+        im = _rgb_3d(page, view)
+        return int((im.sum(axis=2) > 90).sum())
+
+    tudo = claros()
+    page.get_by_test_id("layer-pele").click()
+    page.get_by_test_id("layer-moles").click()
+    sem_corpo = claros()
+    assert sem_corpo < 0.4 * tudo, (tudo, sem_corpo)
+    page.get_by_test_id("layer-osso").click()
+    sem_osso = claros()
+    assert 0 < sem_osso < sem_corpo, (sem_corpo, sem_osso)
+    for camada in ["osso", "moles", "pele"]:
+        page.get_by_test_id(f"layer-{camada}").click()
+    assert claros() > 0.9 * tudo
+
+    # crescer: destacar, segurando em cima do cilindro
+    page.get_by_test_id("open-sculpt").click()
+    page.get_by_test_id("sculpt-grow-highlight").click()
+    caixa = view.bounding_box()
+    page.mouse.move(caixa["x"] + caixa["width"] / 2, caixa["y"] + caixa["height"] * 0.3)
+    page.mouse.down()
+    page.wait_for_timeout(1200)
+    page.mouse.up()
+    page.wait_for_timeout(500)
+    assert "Destacado" in _sculpt_status(page), _sculpt_status(page)
+    assert page.get_by_test_id("sculpt-highlight").count() == 1
+    page.get_by_test_id("sculpt-close").click()
+    im = _rgb_3d(page, view)
+    vermelho = int(((im[..., 0] > 180) & (im[..., 1] < 120) & (im[..., 2] < 120)).sum())
+    assert vermelho > 300, vermelho
+    page.get_by_test_id("open-sculpt").click()
+    page.get_by_test_id("sculpt-highlight-clear").click()
+    assert page.get_by_test_id("sculpt-highlight").count() == 0
+    assert not session.errors, session.errors

@@ -35,6 +35,7 @@ import {
   hintFor,
 } from '@/src/catstudio/sculpt/toolList';
 import SculptBone from '@/src/catstudio/components/SculptBone.vue';
+import SculptHighlight from '@/src/catstudio/components/SculptHighlight.vue';
 import {
   autoTable,
   setAutoTable,
@@ -148,6 +149,7 @@ function startGrowing(point: Point) {
         point,
         threshold: threshold.value,
         keep: mode.value === 'grow-keep',
+        highlight: mode.value === 'grow-highlight',
       })
     : null;
   if (!growing) {
@@ -431,6 +433,7 @@ function restore() {
           sempre, ao abrir
         </label>
       </div>
+      <sculpt-highlight :image-id="imageId" />
       <sculpt-bone
         :image-id="imageId"
         :busy="busy"

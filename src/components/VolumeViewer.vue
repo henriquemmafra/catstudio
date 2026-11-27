@@ -103,6 +103,26 @@
             </v-menu>
             <v-btn
               class="pointer-events-all"
+              :color="layersOpen ? 'primary' : 'white'"
+              icon
+              size="medium"
+              variant="text"
+              data-testid="open-layers"
+              @click="layersOpen = !layersOpen"
+            >
+              <v-icon size="medium" class="py-1 view-control-icon">
+                mdi-layers-outline
+              </v-icon>
+              <v-tooltip
+                location="right"
+                activator="parent"
+                transition="slide-x-transition"
+              >
+                Camadas: mostrar/esconder pele, músculos, vasos, osso
+              </v-tooltip>
+            </v-btn>
+            <v-btn
+              class="pointer-events-all"
               :color="sculptOpen ? 'primary' : 'white'"
               icon
               size="medium"
@@ -164,6 +184,11 @@
           </div>
         </template>
       </view-overlay-grid>
+      <layer-bar
+        v-model:open="layersOpen"
+        :view="vtkView"
+        :image-id="currentImageID"
+      />
       <crop-rotate :view="vtkView" :image-id="currentImageID" />
       <sculpt-panel
         v-model:open="sculptOpen"
@@ -195,6 +220,7 @@ import { captureViewHiRes, captureViewPNG } from '@/src/catstudio/capture';
 import { guardStatus } from '@/src/catstudio/renderGuard';
 import SculptPanel from '@/src/catstudio/components/SculptPanel.vue';
 import CropRotate from '@/src/catstudio/components/CropRotate.vue';
+import LayerBar from '@/src/catstudio/components/LayerBar.vue';
 import { useWindowDrag } from '@/src/catstudio/useWindowDrag';
 import { displayPresetName } from '@/src/catstudio/paletteStore';
 import PhotoBadge from '@/src/catstudio/components/PhotoBadge.vue';
@@ -212,6 +238,7 @@ interface VolumeViewerOptions {
 
 const vtkView = ref<VtkViewApi>();
 const sculptOpen = ref(false);
+const layersOpen = ref(false);
 const rootEl = ref<HTMLElement>();
 
 const props = defineProps<Props>();

@@ -6,6 +6,14 @@
  */
 import { reactive } from 'vue';
 import { type Dims, packMask, unpackMask, voxelCount } from './mask';
+import {
+  LAYERS,
+  type Layer,
+  type LayerSet,
+  allVisible,
+  available,
+  hiddenByLayers,
+} from './layers';
 
 export const UNDO_LEVELS = 12;
 
@@ -211,12 +219,134 @@ export function setBoneOpacity(imageID: string, opacity: number) {
   if (changesVolume) bump(imageID);
 }
 
+// ---------- camadas ----------
+
+interface LayerState {
+  set: LayerSet;
+  /** 1 = escondido por camada desligada; null = todas ligadas */
+  hidden: Uint8Array | null;
+}
+
+const layerStates = new Map<string, LayerState>();
+
+export interface LayerView {
+  visible: Record<Layer, boolean>;
+  available: Record<Layer, boolean>;
+  /** voxels por camada */
+  counts: Record<Layer, number>;
+}
+
+/** Estado reativo das camadas por exame, para os botões. */
+export const layerViews = reactive<Record<string, LayerView>>({});
+
+export function setLayers(imageID: string, set: LayerSet) {
+  layerStates.set(imageID, { set, hidden: null });
+  layerViews[imageID] = {
+    visible: allVisible(),
+    available: Object.fromEntries(
+      LAYERS.map((layer) => [layer, available(set, layer)])
+    ) as Record<Layer, boolean>,
+    counts: { ...set.counts },
+  };
+  bump(imageID);
+}
+
+export function layersOf(imageID: string, dims: Dims): LayerState | null {
+  const state = layerStates.get(imageID);
+  return state && sameDims(state.set.dims, dims) ? state : null;
+}
+
+export function setLayerVisible(imageID: string, layer: Layer, on: boolean) {
+  const state = layerStates.get(imageID);
+  const view = layerViews[imageID];
+  if (!state || !view || view.visible[layer] === on) return;
+  view.visible[layer] = on;
+  state.hidden = hiddenByLayers(state.set, view.visible);
+  bump(imageID);
+}
+
+// ---------- destaque ----------
+
+interface Highlight {
+  dims: Dims;
+  /** 1 = destacado */
+  mask: Uint8Array;
+}
+
+const highlights = new Map<string, Highlight>();
+
+export interface HighlightView {
+  voxels: number;
+  /** quanto do resto aparece, 0–1 */
+  rest: number;
+  /** #rrggbb */
+  color: string;
+}
+
+export const highlightViews = reactive<Record<string, HighlightView>>({});
+
+export const DEFAULT_HIGHLIGHT: Omit<HighlightView, 'voxels'> = {
+  rest: 0.25,
+  color: '#ff3b30',
+};
+
+/** A máscara de destaque do exame (criada vazia se ainda não houver). */
+export function highlightMask(imageID: string, dims: Dims): Uint8Array {
+  const known = highlights.get(imageID);
+  if (known && sameDims(known.dims, dims)) return known.mask;
+  const mask = new Uint8Array(voxelCount(dims));
+  highlights.set(imageID, { dims: [dims[0], dims[1], dims[2]], mask });
+  return mask;
+}
+
+export function highlightOf(imageID: string, dims: Dims): Uint8Array | null {
+  const known = highlights.get(imageID);
+  const view = highlightViews[imageID];
+  if (!known || !view?.voxels || !sameDims(known.dims, dims)) return null;
+  return known.mask;
+}
+
+/** Avisa que a máscara de destaque mudou (depois de crescer). */
+export function updateHighlight(imageID: string) {
+  const known = highlights.get(imageID);
+  if (!known) return;
+  let voxels = 0;
+  for (let i = 0; i < known.mask.length; i++) voxels += known.mask[i];
+  const view = highlightViews[imageID] ?? { ...DEFAULT_HIGHLIGHT, voxels: 0 };
+  highlightViews[imageID] = { ...view, voxels };
+  bump(imageID);
+}
+
+export function clearHighlight(imageID: string) {
+  highlights.delete(imageID);
+  if (highlightViews[imageID]) highlightViews[imageID].voxels = 0;
+  bump(imageID);
+}
+
+export function setHighlightLook(
+  imageID: string,
+  look: Partial<Omit<HighlightView, 'voxels'>>
+) {
+  const view = highlightViews[imageID];
+  if (view) Object.assign(view, look);
+}
+
 /** Esquece a escultura (ao fechar o exame). */
 export function forgetSculpts() {
-  [...sculpts.keys(), ...bones.keys()].forEach((imageID) => {
+  const ids = [
+    ...sculpts.keys(),
+    ...bones.keys(),
+    ...layerStates.keys(),
+    ...highlights.keys(),
+  ];
+  ids.forEach((imageID) => {
     sculpts.delete(imageID);
     bones.delete(imageID);
+    layerStates.delete(imageID);
+    highlights.delete(imageID);
     delete boneViews[imageID];
+    delete layerViews[imageID];
+    delete highlightViews[imageID];
     delete sculptVersions[imageID];
   });
 }

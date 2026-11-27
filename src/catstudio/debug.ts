@@ -10,7 +10,7 @@ import {
 } from '@/src/catstudio/renderGuard';
 import { slabFor } from '@/src/catstudio/slab';
 import { performanceSettings } from '@/src/catstudio/performance';
-import { sculptSummary } from '@/src/catstudio/sculpt/state';
+import { layerViews, sculptSummary } from '@/src/catstudio/sculpt/state';
 
 /** A tela de vídeo compartilhada, para o teste de perda de contexto. */
 export const debugGl: { canvas: HTMLCanvasElement | null } = { canvas: null };
@@ -28,6 +28,8 @@ export function installDebugHook() {
     slab: (viewID: string) => ({ ...slabFor(viewID) }),
     performance: () => performanceSettings.mode,
     sculpt: (imageID: string) => ({ ...sculptSummary(imageID) }),
+    layers: (imageID: string) =>
+      JSON.parse(JSON.stringify(layerViews[imageID] ?? null)),
     loseGlContext,
     LADDER,
     FRAME_BUDGET_MS,

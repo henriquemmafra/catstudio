@@ -20,6 +20,16 @@ export interface Grower {
   head: number;
   /** true: sobra só o que cresceu; false: o que cresceu é apagado */
   keep: boolean;
+  /** onde o crescimento é pintado, e com que valor */
+  target: Uint8Array;
+  value: number;
+}
+
+export interface GrowOptions {
+  threshold: number;
+  keep: boolean;
+  /** pinta 1 nesta máscara (destaque) em vez de mexer no que está escondido */
+  into?: Uint8Array;
 }
 
 /**
@@ -29,23 +39,30 @@ export interface Grower {
 export function startGrow(
   grid: Grid,
   seed: number,
-  options: { threshold: number; keep: boolean }
+  options: GrowOptions
 ): Grower | null {
   const fill = newFill(grid, options.threshold);
   // o que estava escondido antes continua barrando o caminho, mesmo que a
   // máscara mude durante o crescimento
   fill.blocked = grid.hidden.slice();
   if (!seedFill(fill, seed)) return null;
-  if (options.keep) grid.hidden.fill(1);
-  const grower: Grower = { fill, head: 0, keep: options.keep };
+  const into = options.into ?? null;
+  if (options.keep && !into) grid.hidden.fill(1);
+  const grower: Grower = {
+    fill,
+    head: 0,
+    keep: options.keep,
+    target: into ?? grid.hidden,
+    value: into || !options.keep ? 1 : 0,
+  };
   paint(grower, 0);
   return grower;
 }
 
 function paint(grower: Grower, from: number) {
-  const { queue, grid } = grower.fill;
-  const value = grower.keep ? 0 : 1;
-  for (let n = from; n < queue.length; n++) grid.hidden[queue.data[n]] = value;
+  const { queue } = grower.fill;
+  const { target, value } = grower;
+  for (let n = from; n < queue.length; n++) target[queue.data[n]] = value;
 }
 
 /** Avança `layers` camadas. Devolve o tamanho da seleção em voxels. */

@@ -40,6 +40,19 @@ está no branch [`servidor-slicer`](https://github.com/henriquemmafra/catstudio/
    livre, segmentação e "Salvar sessão" (arquivo local).
 8. Avisos de geometria (tilt, lacuna, série dividida) aparecem no sino.
 
+### Camadas do 3D (mostrar/esconder)
+
+O ícone de camadas na vista 3D abre a barra **Separar tecidos**. Depois de
+alguns segundos aparecem os botões, um por camada, para mostrar ou esconder:
+**Fora do corpo** (mesa, cabos), **Pele** (os primeiros ~3 mm), **Gordura**,
+**Músculos e órgãos**, **Vasos (contraste)** e **Osso**. O de vasos só fica
+ativo em exame com contraste.
+
+É uma separação por densidade e posição, não segmentação de órgão: "músculos
+e órgãos" inclui fígado, coração e tudo de −30 a 150 UH; "vasos" é tudo
+acima de 150 UH que não é osso, então inclui cálcio e contraste nos rins e
+na bexiga; osso encostado em vaso contrastado pode ir junto com ele.
+
 ### Esculpir o 3D
 
 Na vista 3D, a tesoura (canto de cima, à esquerda) abre as ferramentas de
@@ -61,6 +74,10 @@ uma cópia em que o que foi apagado vira ar.
 - **Crescer: manter / apagar** — aperte e segure em cima de um vaso: a seleção
   avança ao longo dele enquanto o botão fica apertado (o volume aparece no
   painel). Solte para parar; o gesto inteiro vale um desfazer.
+- **Crescer: destacar** — aperte e segure em cima do vaso ou órgão: ele vai
+  sendo pintado numa cor de destaque e o resto fica translúcido. Repita para
+  somar outros. Dá para trocar a cor, escolher quanto do resto aparece e
+  limpar o destaque. (A foto final ainda não reproduz o destaque.)
 - **Detectar osso** — marca as estruturas densas e heterogêneas (cortical +
   medular). Depois, o controle **Osso** vai de escondido a normal, passando
   por translúcido. **Osso sim/não** corrige no clique o que a detecção errou.

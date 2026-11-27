@@ -50,7 +50,13 @@ import {
   resetLight,
 } from '@/src/catstudio/lightLook';
 import { useSculptedImage } from '@/src/catstudio/sculpt/useSculptedImage';
-import { boneViews, sculptVersions } from '@/src/catstudio/sculpt/state';
+import {
+  boneViews,
+  highlightViews,
+  sculptVersions,
+} from '@/src/catstudio/sculpt/state';
+import { focusOf } from '@/src/catstudio/sculpt/useSculptedImage';
+import { parseHex } from '@/src/catstudio/palette';
 import {
   isReduced,
   limitCvr,
@@ -263,24 +269,56 @@ watchEffect(() => {
   view.requestRender();
 });
 
-// CatStudio: osso translúcido. O volume vem com dois componentes (resto e
-// osso); o segundo usa as mesmas curvas, com peso igual à opacidade do osso.
+// CatStudio: volume de dois componentes (o resto e um "foco").
+//  - osso translúcido: o foco usa as mesmas curvas, com peso igual à
+//    opacidade do osso;
+//  - destaque (crescer: destacar): o foco sai opaco numa cor só, e o resto
+//    fica com o peso escolhido (translúcido e mais escuro).
+const highlightColor = vtkColorTransferFunction.newInstance();
+const highlightOpacity = vtkPiecewiseFunction.newInstance();
+// o que foi destacado vale ≥ o limiar do crescimento; fora dele é "ar"
+highlightOpacity.addPoint(-3000, 0);
+highlightOpacity.addPoint(-600, 0);
+highlightOpacity.addPoint(-300, 0.9);
+highlightOpacity.addPoint(6000, 0.9);
+onScopeDispose(() => {
+  highlightColor.delete();
+  highlightOpacity.delete();
+});
+
+function useFocus(id: string) {
+  const { property } = rep;
+  if (focusOf(id) === 'destaque') {
+    const look = highlightViews[id];
+    const [r, g, b] = parseHex(look.color);
+    highlightColor.removeAllPoints();
+    highlightColor.addRGBPoint(-3000, r, g, b);
+    highlightColor.addRGBPoint(6000, r, g, b);
+    property.setRGBTransferFunction(1, highlightColor);
+    property.setScalarOpacity(1, highlightOpacity);
+    property.setComponentWeight(0, look.rest);
+    property.setComponentWeight(1, 1);
+    return;
+  }
+  property.setRGBTransferFunction(1, cfun);
+  property.setScalarOpacity(1, ofun);
+  property.setComponentWeight(0, 1);
+  property.setComponentWeight(1, boneViews[id]?.opacity || 0);
+}
+
 watchEffect(() => {
   const img = renderImage.value;
   if (!img) return;
   const { property } = rep;
   const split = img.getPointData().getScalars().getNumberOfComponents() === 2;
   property.setIndependentComponents(split);
-  if (split) {
-    const id = imageID.value;
-    property.setRGBTransferFunction(1, cfun);
-    property.setScalarOpacity(1, ofun);
+  const id = imageID.value;
+  if (split && id) {
+    useFocus(id);
     property.setScalarOpacityUnitDistance(
       1,
       property.getScalarOpacityUnitDistance(0)
     );
-    property.setComponentWeight(0, 1);
-    property.setComponentWeight(1, (id && boneViews[id]?.opacity) || 0);
   }
   view.requestRender();
 });

@@ -6,8 +6,8 @@ import type vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
 import type vtkVolume from '@kitware/vtk.js/Rendering/Core/Volume';
 import type { VtkViewApi } from '@/src/types/vtk-types';
 import { lightLook, lightPosition } from '@/src/catstudio/lightLook';
-import { boneOf, boneViews, sculptOf } from '@/src/catstudio/sculpt/state';
-import { baseImageOf } from '@/src/catstudio/sculpt/useSculptedImage';
+import { boneOf, boneViews } from '@/src/catstudio/sculpt/state';
+import { baseImageOf, hiddenOf } from '@/src/catstudio/sculpt/useSculptedImage';
 import type { Dims } from '@/src/catstudio/sculpt/mask';
 import {
   type Camera,
@@ -111,11 +111,11 @@ function lightingOf(
 
 /** O que a escultura esconde e o osso, se algum dos dois muda a imagem. */
 function sculptLayers(imageID: string, dims: Dims) {
-  const sculpt = sculptOf(imageID, dims);
+  const hiddenNow = hiddenOf(imageID, dims);
   const bone = boneOf(imageID, dims);
   const boneOpacity = boneViews[imageID]?.opacity ?? 1;
   return {
-    hidden: sculpt?.count ? sculpt.hidden : null,
+    hidden: hiddenNow,
     bone: bone && boneOpacity < 1 ? bone : null,
     boneOpacity,
   };

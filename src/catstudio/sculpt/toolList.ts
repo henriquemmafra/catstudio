@@ -8,6 +8,7 @@ export type SculptMode =
   | 'pick-keep'
   | 'grow-remove'
   | 'grow-keep'
+  | 'grow-highlight'
   | 'pick-bone'
   | 'brush-remove';
 
@@ -60,6 +61,12 @@ export const SCULPT_TOOLS: SculptTool[] = [
     icon: 'mdi-source-branch',
     title: 'Crescer: manter',
     hint: 'Aperte e segure em cima do vaso: a seleção cresce ao longo dele e o resto some. Solte para parar.',
+  },
+  {
+    mode: 'grow-highlight',
+    icon: 'mdi-marker',
+    title: 'Crescer: destacar',
+    hint: 'Aperte e segure em cima do vaso ou órgão: ele vai sendo pintado na cor de destaque e o resto fica translúcido. Solte para parar; repita para somar outros.',
   },
   {
     mode: 'grow-remove',

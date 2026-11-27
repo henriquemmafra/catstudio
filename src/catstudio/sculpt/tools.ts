@@ -25,12 +25,16 @@ import {
   boneOf,
   boneViews,
   editSculpt,
-  sculptOf,
+  highlightMask,
   setBone,
+  setLayers,
+  updateHighlight,
 } from './state';
 import { type Grower, grownVoxels, growLayers, startGrow } from './grow';
 import { BONE_LOW, countBone, detectBone, toggleBone } from './bone';
 import { removeOutsideBody } from './body';
+import { classify } from './layers';
+import { hiddenOf as hiddenNow } from './useSculptedImage';
 
 export interface SculptTarget {
   view: VtkViewApi;
@@ -134,8 +138,9 @@ function insideCrop(target: SculptTarget) {
 /** A máscara atual, ou uma vazia se o exame ainda não foi esculpido. */
 function hiddenOf(target: SculptTarget): Uint8Array {
   const dims = dimsOf(target.base);
+  // escultura e camadas desligadas: o clique atravessa os dois
   return (
-    sculptOf(target.imageID, dims)?.hidden ??
+    hiddenNow(target.imageID, dims) ??
     new Uint8Array(dims[0] * dims[1] * dims[2])
   );
 }
@@ -244,16 +249,44 @@ function growText(target: SculptTarget, grower: Grower) {
   return formatMl(volumeMl(target.base, grownVoxels(grower)));
 }
 
+/** Crescer pintando o destaque (o que está escondido não muda). */
+function startHighlightStroke(
+  target: SculptTarget,
+  request: PickRequest,
+  seed: number
+): GrowStroke | null {
+  const dims = dimsOf(target.base);
+  const into = highlightMask(target.imageID, dims);
+  const blocked =
+    hiddenNow(target.imageID, dims) ?? new Uint8Array(into.length);
+  const grower = startGrow(gridOf(target, blocked), seed, {
+    threshold: request.threshold,
+    keep: false,
+    into,
+  });
+  if (!grower) return null;
+  updateHighlight(target.imageID);
+  return {
+    step: () => {
+      growLayers(grower, LAYERS_PER_STEP);
+      updateHighlight(target.imageID);
+      return `Destacando… ${growText(target, grower)}. Solte para parar.`;
+    },
+    finish: () => `Destacado: ${growText(target, grower)}.`,
+  };
+}
+
 /**
  * Começa a crescer a partir do que está sob o cursor. Devolve null se não há
  * estrutura ali.
  */
 export function startGrowStroke(
   target: SculptTarget,
-  request: PickRequest
+  request: PickRequest & { highlight?: boolean }
 ): GrowStroke | null {
   const seed = voxelUnder(target, request.point, request.threshold);
   if (seed < 0) return null;
+  if (request.highlight) return startHighlightStroke(target, request, seed);
   const stroke = beginStroke(target.imageID, dimsOf(target.base));
   const grower = startGrow(gridOf(target, stroke.hidden), seed, request);
   if (!grower) {
@@ -312,6 +345,28 @@ export const hasBone = (imageID: string) =>
   (boneViews[imageID]?.voxels ?? 0) > 0;
 
 // ---------- mesa ----------
+
+// ---------- camadas ----------
+
+/** Separa os tecidos em camadas (uma vez por exame). */
+export function computeLayers(target: SculptTarget): string {
+  const dims = dimsOf(target.base);
+  const set = classify(
+    { dims, scalars: target.base.getPointData().getScalars().getData() },
+    Math.max(...target.base.getSpacing()),
+    volumeMl(target.base, 1) * 1000
+  );
+  setLayers(target.imageID, set);
+  if (!boneOf(target.imageID, dims) && set.boneVoxels)
+    setBone(target.imageID, {
+      dims,
+      label: set.bone,
+      voxels: set.boneVoxels,
+    });
+  return set.counts.vasos
+    ? 'Camadas prontas.'
+    : 'Camadas prontas (sem contraste: não há vasos para separar).';
+}
 
 /** Esconde a mesa e tudo o mais que está fora do corpo. */
 export function removeTable(target: SculptTarget): string {
