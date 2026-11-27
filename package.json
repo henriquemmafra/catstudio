@@ -128,5 +128,8 @@
       "eslint",
       "prettier --write"
     ]
+  },
+  "dependencies": {
+    "gifenc": "^1.0.3"
   }
 }

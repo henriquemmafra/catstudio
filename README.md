@@ -87,6 +87,20 @@ uma cópia em que o que foi apagado vira ar.
   acontecer sozinho em todo exame (a escolha fica guardada no navegador).
 - **Desfazer** (12 níveis) e **Restaurar tudo**.
 
+**Só pulmões**: em Ferramentas 3D, um clique esconde tudo menos os pulmões
+(com os vasos e brônquios de dentro) e põe as cores de pulmão do diretor de
+arte. Desfazer traz o resto de volta.
+
+**GIF do 3D girando**: Exportar > "GIF girando…". Giro (um sentido) ou vaivém,
+90, 180 ou 360°, eixo vertical (gira de lado, o padrão) ou horizontal (tomba);
+tamanho e velocidade à escolha. Nos arcos de 90° e 180° a vista atual fica no
+meio do movimento.
+
+**Apagado e destaque nos cortes 2D**: o que a borracha, o laço e o crescer
+apagam no 3D aparece em azul nos cortes, e o destaque aparece na cor dele,
+para conferir onde a ferramenta pegou. Liga e desliga em Ferramentas 3D
+("mostrar nos cortes 2D"). Ar apagado (fora do corpo) não é pintado.
+
 **Passar os cortes com o botão direito**: nas vistas 2D, segure o botão
 direito e arraste para cima ou para baixo (a altura da vista percorre o exame
 todo). O zoom com o direito passou para Ctrl + direito; a roda continua igual.

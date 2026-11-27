@@ -1528,3 +1528,109 @@ def test_botao_direito_arrastando_passa_os_cortes(session):
     arrastar(box["height"] * 0.2, ctrl=True)
     assert corte() == inicio
     assert not session.errors, session.errors
+
+
+def _coloridos_2d(page, cor):
+    """Pixels azulados ("azul") ou avermelhados ("vermelho") na vista axial."""
+    from PIL import Image
+    page.wait_for_timeout(1200)
+    axial = page.get_by_test_id("vtk-view vtk-two-view").first
+    im = np.asarray(Image.open(io.BytesIO(axial.screenshot())).convert("RGB")).astype(float)
+    im = im[40:-40, 40:-40]
+    if cor == "azul":
+        return int(((im[..., 2] - im[..., 0]) > 30).sum())
+    return int(((im[..., 0] - im[..., 2]) > 40).sum())
+
+
+def test_apagado_e_destaque_aparecem_nos_cortes_2d(session):
+    """O que a borracha/laço apaga no 3D aparece em azul nos cortes 2D e o
+    destaque aparece na cor dele; a caixa "mostrar nos cortes 2D" desliga."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    _open_sculpt(page)
+    assert _coloridos_2d(page, "azul") < 50
+    caixa = view.bounding_box()
+    x0, y0, w, h = caixa["x"], caixa["y"], caixa["width"], caixa["height"]
+    page.get_by_test_id("sculpt-lasso-remove").click()
+    page.mouse.move(x0 + w / 2, y0 + 5)
+    page.mouse.down()
+    for x, y in [(x0 + w - 5, y0 + 5), (x0 + w - 5, y0 + h - 5),
+                 (x0 + w / 2, y0 + h - 5), (x0 + w / 2, y0 + 5)]:
+        page.mouse.move(x, y, steps=4)
+    page.mouse.up()
+    page.wait_for_timeout(1500)
+    assert "apagada" in _sculpt_status(page)
+    page.keyboard.press("Escape")
+    azul = _coloridos_2d(page, "azul")
+    assert azul > 300, azul
+    # desligar a caixa tira a pintura; ligar de novo devolve
+    page.get_by_test_id("sculpt-show-2d").uncheck()
+    assert _coloridos_2d(page, "azul") < 50
+    page.get_by_test_id("sculpt-show-2d").check()
+    assert _coloridos_2d(page, "azul") > 300
+    # desfazer limpa o corte
+    page.get_by_test_id("sculpt-undo").click()
+    assert _coloridos_2d(page, "azul") < 50
+    assert not session.errors, session.errors
+
+
+def test_gif_girando_em_vaivem(session):
+    """Exportar > GIF girando: vaivém de 90° gera um GIF com ida e volta
+    (24 quadros de ida + 22 de volta) e a câmera volta para onde estava."""
+    from PIL import Image
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    antes = _gray_3d(page, view)
+    page.get_by_test_id("export-3d-menu").click()
+    page.get_by_test_id("export-3d-gif").click()
+    page.get_by_test_id("gif-motion-vaivem").click()
+    page.get_by_test_id("gif-arc-90").click()
+    page.get_by_test_id("gif-axis-vertical").click()
+    page.get_by_test_id("gif-side").select_option("360")
+    with page.expect_download(timeout=240000) as dl:
+        page.get_by_test_id("gif-make").click()
+    caminho = dl.value.path()
+    assert dl.value.suggested_filename == "catstudio-3d-vaivem-90-vertical.gif"
+    gif = Image.open(caminho)
+    assert gif.format == "GIF" and gif.n_frames == 46, gif.n_frames
+    assert max(gif.size) <= 360
+    quadros = []
+    for i in (0, 12, 23, 34):
+        gif.seek(i)
+        quadros.append(np.asarray(gif.convert("L")).astype(float))
+    assert quadros[0].std() > 5
+    # o primeiro e o último da ida são vistas diferentes; a volta repete a ida
+    assert np.abs(quadros[0] - quadros[2]).mean() > 1
+    assert np.abs(quadros[1] - quadros[3]).mean() < 0.01
+    assert "GIF pronto" in page.get_by_test_id("gif-message").inner_text()
+    page.get_by_test_id("gif-close").click()
+    depois = _gray_3d(page, view)
+    assert np.abs(antes - depois).mean() < 2
+    assert not session.errors, session.errors
+
+
+def test_so_pulmoes_com_um_clique(session):
+    """"Só pulmões" esconde o resto do exame, usa as cores de pulmão do
+    diretor, e desfazer traz tudo de volta."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    page.wait_for_timeout(5000)
+    view = page.get_by_test_id("vtk-view vtk-volume-view").first
+    _open_sculpt(page)
+    ids = f"[...{PINIA}._s.get('image-cache').imageIds][0]"
+    inteiro = _sculpt_shot(page, view)
+    page.get_by_test_id("sculpt-lungs").click()
+    page.wait_for_function(
+        "() => /pulm/.test(document.querySelector('[data-testid=sculpt-status]')?.textContent ?? '')",
+        timeout=60000)
+    assert "Só os pulmões" in _sculpt_status(page), _sculpt_status(page)
+    so_pulmao = _sculpt_shot(page, view)
+    assert np.abs(inteiro - so_pulmao).mean() > 1
+    assert so_pulmao.std() > 2  # sobrou alguma coisa para ver
+    page.get_by_test_id("sculpt-undo").click()
+    assert "Desfeito" in _sculpt_status(page)
+    assert not session.errors, session.errors

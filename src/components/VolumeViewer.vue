@@ -90,6 +90,12 @@
                   data-testid="export-3d-photo-4x"
                   @click="startPhoto(4)"
                 />
+                <v-list-item
+                  title="GIF girando…"
+                  subtitle="Giro ou vaivém de 90, 180 ou 360°"
+                  data-testid="export-3d-gif"
+                  @click="gifOpen = true"
+                />
                 <v-divider />
                 <v-list-item
                   v-for="option in EXPORT_OPTIONS"
@@ -157,6 +163,7 @@
         </template>
         <template #bottom-center>
           <photo-badge :view-id="viewId" />
+          <spin-gif v-model="gifOpen" :view="vtkView" :settle="frameSettled" />
         </template>
         <template #top-right>
           <div class="annotation-cell">
@@ -228,6 +235,7 @@ import { useWindowDrag } from '@/src/catstudio/useWindowDrag';
 import { useHandoff } from '@/src/catstudio/director/useHandoff';
 import { displayPresetName } from '@/src/catstudio/paletteStore';
 import PhotoBadge from '@/src/catstudio/components/PhotoBadge.vue';
+import SpinGif from '@/src/catstudio/components/SpinGif.vue';
 import { takePhoto } from '@/src/catstudio/photo/run';
 import { useImageCacheStore } from '@/src/store/image-cache';
 
@@ -290,6 +298,19 @@ async function settled() {
   for (let waited = 0; waited < 40_000 && guard.value.refining; waited += 200)
     await pause(200);
   await pause(300);
+}
+
+// CatStudio: GIF girando — cada quadro espera a vista refinar (até 4 s)
+const gifOpen = ref(false);
+async function frameSettled() {
+  const pause = (ms: number) =>
+    new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  await pause(80);
+  for (let waited = 0; waited < 4000 && guard.value.refining; waited += 100)
+    await pause(100);
+  await pause(40);
 }
 
 // CatStudio: foto final feita no processador (ver photo/raycast.ts)

@@ -38,13 +38,12 @@ import {
 } from '@/src/catstudio/sculpt/toolList';
 import useVolumeColoringStore from '@/src/store/view-configs/volume-coloring';
 import SculptBone from '@/src/catstudio/components/SculptBone.vue';
-import { smoothing } from '@/src/catstudio/sculpt/smooth';
+import SculptOptions from '@/src/catstudio/components/SculptOptions.vue';
+import { keepLungs, LUNG_PALETTE } from '@/src/catstudio/sculpt/lungs';
+import { allPalettes, applyPalette } from '@/src/catstudio/paletteStore';
+import { choosePreset } from '@/src/catstudio/lightLook';
 import SculptHighlight from '@/src/catstudio/components/SculptHighlight.vue';
-import {
-  autoTable,
-  setAutoTable,
-  shouldAutoCut,
-} from '@/src/catstudio/sculpt/autoTable';
+import { shouldAutoCut } from '@/src/catstudio/sculpt/autoTable';
 import {
   baseImageOf,
   baseVersions,
@@ -307,6 +306,17 @@ const removeFragmentsNow = () =>
 const detectBoneNow = () => run(findBone);
 const removeTableNow = () => run(removeTable);
 
+/** Um clique: esconde tudo menos os pulmões e põe as cores de pulmão. */
+const lungsOnlyNow = () =>
+  run((where) => {
+    const phrase = keepLungs(where);
+    const palette = allPalettes().find((p) => p.id === LUNG_PALETTE);
+    if (palette && viewId.value)
+      applyPalette({ viewID: viewId.value, imageID: where.imageID }, palette);
+    choosePreset('diretor');
+    return phrase;
+  });
+
 // tirar a mesa sozinho, uma vez por exame, quando o volume do 3D fica pronto
 watch(
   () => [view.value, imageId.value && baseVersions[imageId.value]],
@@ -416,6 +426,20 @@ function restore() {
       </label>
       <sculpt-highlight :image-id="imageId" />
 
+      <div class="sculpt-row">
+        <v-btn
+          size="small"
+          variant="tonal"
+          prepend-icon="mdi-lungs"
+          :disabled="busy"
+          title="Esconde tudo menos os pulmões e usa as cores de pulmão"
+          data-testid="sculpt-lungs"
+          @click="lungsOnlyNow"
+        >
+          Só pulmões
+        </v-btn>
+      </div>
+
       <div class="sculpt-section">Limpeza</div>
       <div class="sculpt-row">
         <v-btn
@@ -449,23 +473,7 @@ function restore() {
           </option>
         </select>
       </div>
-      <label class="sculpt-check">
-        <input
-          v-model="smoothing.enabled"
-          type="checkbox"
-          data-testid="sculpt-smooth"
-        />
-        tirar o granulado (suavizar)
-      </label>
-      <label class="sculpt-check">
-        <input
-          type="checkbox"
-          :checked="autoTable.enabled"
-          data-testid="sculpt-table-auto"
-          @change="setAutoTable(($event.target as HTMLInputElement).checked)"
-        />
-        tirar a mesa sempre, ao abrir
-      </label>
+      <sculpt-options />
 
       <sculpt-bone
         :image-id="imageId"
@@ -638,14 +646,6 @@ function restore() {
   color: rgba(255, 255, 255, 0.7);
   font-size: 11px;
   cursor: pointer;
-}
-
-.sculpt-check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-  color: rgba(255, 255, 255, 0.8);
 }
 
 .sculpt-label {
