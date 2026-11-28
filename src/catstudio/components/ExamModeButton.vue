@@ -18,6 +18,7 @@ import {
 } from '@/src/catstudio/examMode';
 import { REGION_CHOICES } from '@/src/catstudio/examRegions';
 import {
+  chooseMode,
   chooseRegion,
   detectFor,
   useModeDetection,
@@ -39,7 +40,7 @@ const mode = computed<ExamMode>(() => state.value?.mode ?? 'livre');
 
 function choose(next: ExamMode) {
   const id = currentImageID.value;
-  if (id) setMode(id, { mode: next, why: 'escolhido por você' }, false);
+  if (id) chooseMode(id, next);
 }
 
 function detectNow() {

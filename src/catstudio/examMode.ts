@@ -127,6 +127,11 @@ export interface ModeState extends Detection {
   stamp: number;
   /** a pergunta "tórax, abdome ou aorta total?" já foi respondida ou fechada */
   asked: boolean;
+  /**
+   * recorte dos cortes 2D: faixa de fatias axiais (índices) da região
+   * escolhida; null = exame inteiro
+   */
+  sliceRange: [number, number] | null;
 }
 
 /** Modo de cada exame aberto. */
@@ -166,6 +171,7 @@ export function setMode(imageID: string, detection: Detection, auto: boolean) {
     stamp: stamps,
     // quem escolhe o modo à mão já decidiu; detectar de novo pergunta de novo
     asked: !auto,
+    sliceRange: null,
   };
 }
 

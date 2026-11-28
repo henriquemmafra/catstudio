@@ -1359,7 +1359,8 @@ def test_camadas_e_destaque_segurando_o_cursor(session):
     caixa = view.bounding_box()
     page.mouse.move(caixa["x"] + caixa["width"] / 2, caixa["y"] + caixa["height"] * 0.3)
     page.mouse.down()
-    page.wait_for_timeout(1200)
+    # quanto cresce depende da velocidade da máquina: segura com folga
+    page.wait_for_timeout(3500)
     page.mouse.up()
     page.wait_for_timeout(500)
     assert "Destacado" in _sculpt_status(page), _sculpt_status(page)
@@ -1732,6 +1733,16 @@ def test_modo_do_exame_detecta_e_arruma(session):
     assert not session.errors, session.errors
 
 
+def _aceso_coronal(page):
+    """Quantos pixels da vista coronal têm imagem (não são fundo preto), com
+    uma janela larga para o pulmão também contar."""
+    from PIL import Image
+    page.wait_for_timeout(1000)
+    vista = page.get_by_test_id("vtk-view vtk-two-view").nth(1)
+    im = np.asarray(Image.open(io.BytesIO(vista.screenshot())).convert("L"))
+    return int((im[50:-50, 50:-50] > 25).sum())
+
+
 def test_torax_e_abdome_juntos_oferece_o_recorte(session):
     """Exame combinado: aparece a pergunta "tórax, abdome ou aorta total?".
     Tórax recorta o 3D na faixa do tórax e põe a janela de pulmão; "Aorta
@@ -1750,6 +1761,7 @@ def test_torax_e_abdome_juntos_oferece_o_recorte(session):
     regioes = page.evaluate(f"() => {{ const r = window.__catstudio.examModes[{img}].regions; return [r.combined, r.torax, r.whole]; }}")
     assert regioes[0] is False
     inteiro = page.evaluate(corte)
+    coronal_inteiro = _aceso_coronal(page)
     # faz de conta que metade de baixo do volume é abdome
     z0, z1 = regioes[2]
     meio = (z0 + z1) / 2
@@ -1766,6 +1778,15 @@ def test_torax_e_abdome_juntos_oferece_o_recorte(session):
     faixa = abs(recorte[1] - recorte[0])
     total = page.evaluate(f"() => {PINIA}._s.get('image-cache').getVtkImageData({img}).getDimensions()[2]")
     assert 0.35 * total < faixa < 0.65 * total, (recorte, total)
+    # o 2D também é recortado: o axial só passa pela faixa, e o coronal
+    # mostra menos imagem do que antes
+    limites = f"""() => {{ const p = {PINIA}; const v = p._s.get('view').getAllViews()
+        .find(v => v.type === '2D' && v.options.orientation === 'Axial');
+        const c = p._s.get('viewSlice').getConfig(v.id, {img}); return [c.min, c.max, c.slice]; }}"""
+    minimo, maximo, fatia = page.evaluate(limites)
+    assert maximo - minimo < 0.65 * total and minimo <= fatia <= maximo
+    assert abs(minimo - min(recorte)) <= 1 and abs(maximo - max(recorte)) <= 1
+    assert _aceso_coronal(page) < 0.75 * coronal_inteiro
     # aorta total, pelo menu: exame inteiro de novo
     page.get_by_test_id("exam-mode").click()
     page.get_by_test_id("exam-mode-region-aorta").click()
@@ -1773,4 +1794,10 @@ def test_torax_e_abdome_juntos_oferece_o_recorte(session):
     depois = page.evaluate(corte)
     assert depois is None or abs(depois[1] - depois[0]) > 0.95 * (total - 1)
     assert "Angio" in page.get_by_test_id("exam-mode-why").inner_text()
+    minimo, maximo, _ = page.evaluate(limites)
+    assert (minimo, maximo) == (0, total - 1)
+    # de volta à janela de pulmão (modo tórax, sem recorte), o coronal está inteiro
+    page.get_by_test_id("exam-mode-torax").click()
+    page.keyboard.press("Escape")
+    assert _aceso_coronal(page) > 0.9 * coronal_inteiro
     assert not session.errors, session.errors

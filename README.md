@@ -103,8 +103,10 @@ ou desligar a detecção. Janela nova no menu de janelas: Angio (L 200, W 800).
 dos pulmões, o programa pergunta ao abrir: Tórax, Abdome ou Aorta total. Tórax
 e Abdome põem o modo, recortam o 3D na região (a caixa de corte, que dá para
 ajustar) e levam o corte axial para o meio dela; Aorta total deixa o exame
-inteiro no modo angio. A mesma escolha fica no menu do modo do exame. Os
-cortes 2D não são recortados.
+inteiro no modo angio. A mesma escolha fica no menu do modo do exame. O 2D
+também é recortado: o axial só passa pelas fatias da região e o coronal e o
+sagital mostram só a faixa dela (a fatia espessa MIP/MinIP ainda mostra o
+exame inteiro). Trocar de modo pelo menu desfaz o recorte.
 
 **Volume de cavidade (VE, VD)**: botão do coração meio cheio na barra
 lateral. Ponha o cruzamento dos três cortes dentro da cavidade contrastada,

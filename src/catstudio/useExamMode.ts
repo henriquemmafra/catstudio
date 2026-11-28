@@ -2,7 +2,12 @@
  * CatStudio — liga o modo do exame (examMode.ts) ao programa: detecta ao
  * abrir, e as vistas aplicam a janela e as cores do modo escolhido.
  */
-import { type Ref, watch } from 'vue';
+import { type Ref, onScopeDispose, watch } from 'vue';
+import vtkPlane from '@kitware/vtk.js/Common/DataModel/Plane';
+import type vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
+import type vtkImageMapper from '@kitware/vtk.js/Rendering/Core/ImageMapper';
+import type { Vector3 } from '@kitware/vtk.js/types';
+import type { LPSAxis } from '@/src/types/lps';
 import type { Maybe } from '@/src/types';
 import { WLPresetsCT } from '@/src/constants';
 import { useDICOMStore } from '@/src/store/datasets-dicom';
@@ -17,9 +22,7 @@ import {
   lungShare,
 } from '@/src/catstudio/sculpt/chestImage';
 import { useCropStore } from '@/src/store/tools/crop';
-import { useViewStore } from '@/src/store/views';
 import useViewSliceStore from '@/src/store/view-configs/slicing';
-import { volume2DViewsOfImage } from '@/src/core/views/effectiveView';
 import { vec3 } from 'gl-matrix';
 import {
   lungHeights,
@@ -34,6 +37,7 @@ import {
   modeSettings,
   setMode,
   type Detection,
+  type ExamMode,
 } from './examMode';
 
 /** As regiões do exame pelos pulmões; undefined se não é tórax. */
@@ -96,14 +100,16 @@ export function chooseRegion(imageID: string, choice: RegionChoice) {
   if (low == null || high == null) return;
   const range: [number, number] = [Math.min(low, high), Math.max(low, high)];
   crop.setCroppingForAxis(imageID, 'Axial', range);
-  const slices = useViewSliceStore();
-  volume2DViewsOfImage(imageID, useViewStore().getAllViews())
-    .filter(({ axis }) => axis === 'Axial')
-    .forEach(({ viewId }) =>
-      slices.updateConfig(viewId, imageID, {
-        slice: Math.round((range[0] + range[1]) / 2),
-      })
-    );
+  examModes[imageID].sliceRange = [Math.ceil(range[0]), Math.floor(range[1])];
+}
+
+/**
+ * Troca de modo pelo menu: vale para o exame inteiro, então desfaz o recorte
+ * de região (no 3D e no 2D) se havia um.
+ */
+export function chooseMode(imageID: string, mode: ExamMode) {
+  if (examModes[imageID]?.sliceRange) useCropStore().resetCropping(imageID);
+  setMode(imageID, { mode, why: 'escolhido por você' }, false);
 }
 
 /** Fecha a pergunta sem escolher. */
@@ -165,6 +171,85 @@ export function useModeLook(viewID: Ref<string>, imageID: Ref<Maybe<string>>) {
       if (!palette) return;
       applyPalette({ viewID: viewID.value, imageID: id }, palette);
       choosePreset('diretor');
+    },
+    { immediate: true }
+  );
+}
+
+/** Os dois planos (mm) que limitam a faixa de fatias axiais. */
+function bandOf(image: vtkImageData, k: number, range: [number, number]) {
+  // meia fatia de folga, para as fatias das pontas aparecerem inteiras
+  const at = (slice: number) => {
+    const index = [0, 0, 0];
+    index[k] = slice;
+    return [...image.indexToWorld(index as Vector3)] as Vector3;
+  };
+  const from = at(range[0] - 0.5);
+  const to = at(range[1] + 0.5);
+  const along = vec3.normalize(
+    vec3.create(),
+    vec3.sub(vec3.create(), to, from)
+  ) as Vector3;
+  return { from, to, along, back: along.map((v) => -v) as Vector3 };
+}
+
+interface CropView {
+  viewID: Ref<string>;
+  imageID: Ref<Maybe<string>>;
+  axis: Ref<LPSAxis>;
+}
+
+/**
+ * Num corte 2D: recorta a vista na região escolhida. O axial só passa pelas
+ * fatias da região; o coronal e o sagital mostram só a faixa dela.
+ */
+export function useRegionCrop2D(
+  where: CropView,
+  mapper: vtkImageMapper,
+  render: () => void
+) {
+  const low = vtkPlane.newInstance();
+  const high = vtkPlane.newInstance();
+  onScopeDispose(() => {
+    low.delete();
+    high.delete();
+  });
+
+  function limitAxial(id: string, range: [number, number], chosen: boolean) {
+    useViewSliceStore().updateConfig(where.viewID.value, id, {
+      min: range[0],
+      max: range[1],
+      ...(chosen ? { slice: Math.round((range[0] + range[1]) / 2) } : {}),
+    });
+  }
+
+  function clip(band: ReturnType<typeof bandOf>) {
+    low.setOrigin(band.from);
+    low.setNormal(band.along);
+    high.setOrigin(band.to);
+    high.setNormal(band.back);
+    mapper.addClippingPlane(low);
+    mapper.addClippingPlane(high);
+  }
+
+  watch(
+    () => {
+      const id = where.imageID.value;
+      const state = id ? examModes[id] : undefined;
+      return [id, state?.stamp, state?.sliceRange, where.axis.value] as const;
+    },
+    ([id, stamp, range, axis]) => {
+      mapper.removeAllClippingPlanes();
+      const cache = useImageCacheStore();
+      const image = id ? cache.getVtkImageData(id) : null;
+      const metadata = id ? cache.getImageMetadata(id) : null;
+      // sem modo escolhido, não mexe em nada
+      if (!id || !stamp || !image || !metadata) return;
+      const k = metadata.lpsOrientation.Axial;
+      const whole: [number, number] = [0, image.getDimensions()[k] - 1];
+      if (axis === 'Axial') limitAxial(id, range ?? whole, !!range);
+      else if (range) clip(bandOf(image, k, range));
+      render();
     },
     { immediate: true }
   );

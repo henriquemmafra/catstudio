@@ -13,6 +13,7 @@ import { SlicingMode } from '@kitware/vtk.js/Rendering/Core/ImageMapper/Constant
 import { Maybe } from '@/src/types';
 import { VtkViewContext } from '@/src/components/vtk/context';
 import { nativeColorWindow } from '@/src/utils/nativeColorWindow';
+import { useRegionCrop2D } from '@/src/catstudio/useExamMode';
 
 type Props = {
   viewId: string;
@@ -63,6 +64,9 @@ useBaseSliceColoring(
   computed(() => !cine.value && components.value === 1),
   view.requestRender
 );
+
+// CatStudio: recorte da região escolhida (tórax ou abdome) também no 2D
+useRegionCrop2D({ viewID, imageID, axis }, sliceRep.mapper, view.requestRender);
 
 // Push the base image behind layers/segmentations.
 sliceRep.mapper.setResolveCoincidentTopologyToPolygonOffset();
