@@ -206,6 +206,7 @@ import { get2DViewingVectors } from '@/src/utils/getViewingVectors';
 import SlabSlice from '@/src/catstudio/components/SlabSlice.vue';
 import SculptSliceOverlay from '@/src/catstudio/components/SculptSliceOverlay.vue';
 import CavitySliceOverlay from '@/src/catstudio/components/CavitySliceOverlay.vue';
+import { useModeWindow } from '@/src/catstudio/useExamMode';
 import SlabControl from '@/src/catstudio/components/SlabControl.vue';
 import { slabFor } from '@/src/catstudio/slab';
 
@@ -231,6 +232,9 @@ const {
   currentImageData,
   isImageLoading,
 } = useCurrentImage();
+
+// CatStudio: a janela do modo do exame (tórax, angio, abdome...)
+useModeWindow(viewId, currentImageID);
 
 const viewAxis = computed(() => viewInfo.value.options.orientation);
 const viewingVectors = computed(() => get2DViewingVectors(viewAxis.value));

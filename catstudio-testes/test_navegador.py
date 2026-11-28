@@ -123,7 +123,10 @@ class Session:
             "try { if (!localStorage.getItem('catstudio.3d.ferramentasAbertas'))"
             " localStorage.setItem('catstudio.3d.ferramentasAbertas', 'false');"
             " if (!localStorage.getItem('catstudio.3d.suavizar'))"
-            " localStorage.setItem('catstudio.3d.suavizar', '0'); } catch (e) {}")
+            " localStorage.setItem('catstudio.3d.suavizar', '0');"
+            # e o modo do exame não é detectado sozinho (ele troca janela e cores)
+            " if (!localStorage.getItem('catstudio.modo.detectar'))"
+            " localStorage.setItem('catstudio.modo.detectar', '0'); } catch (e) {}")
         if init_script:
             self.page.add_init_script(init_script)
         self.external = []
@@ -1682,4 +1685,48 @@ def test_volume_de_cavidade_pelo_cruzamento_dos_cortes(session):
     page.get_by_test_id("cavity-clear-VE").click()
     assert page.get_by_test_id("cavity-value-VE").count() == 0
     assert _coloridos_2d(page, "vermelho") <= antes + 20
+    assert not session.errors, session.errors
+
+
+def test_modo_do_exame_detecta_e_arruma(session):
+    """Modo do exame: "Detectar de novo" no fantoma (sem descrição que ajude,
+    mas com pulmões) dá Tórax e põe a janela de pulmão; escolher Coronária
+    traz Valvas e Volume de cavidade para a barra; em Abdome elas vão para
+    "Mais ferramentas" e os atalhos de pulmão/coração somem do painel 3D."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    _views(page)
+    janela = f"""() => {{ const p = {PINIA}; const img = [...p._s.get('image-cache').imageIds][0];
+        const v = p._s.get('view').getAllViews().find(v => v.type === '2D');
+        const c = p._s.get('windowing').getConfig(v.id, img); return [c.width, c.level]; }}"""
+    # com a detecção desligada (como nos testes), o modo é o livre: tudo à mão
+    assert page.get_by_test_id("open-valve-mode").count() == 1
+    assert page.get_by_test_id("open-cavity-volume").count() == 1
+    page.get_by_test_id("exam-mode").click()
+    page.get_by_test_id("exam-mode-detect").click()
+    page.wait_for_timeout(800)
+    porque = page.get_by_test_id("exam-mode-why").inner_text()
+    assert "Tórax" in porque and "automático" in porque, porque
+    assert page.evaluate(janela) == [1500, -600]
+    assert page.get_by_test_id("open-valve-mode").count() == 0
+    assert page.get_by_test_id("exam-mode-extra-valvas").count() == 1
+    # coronária: as duas ferramentas cardíacas voltam para a barra
+    page.get_by_test_id("exam-mode-cardio").click()
+    page.wait_for_timeout(500)
+    assert page.evaluate(janela) == [800, 200]
+    assert page.get_by_test_id("open-valve-mode").count() == 1
+    assert page.get_by_test_id("open-cavity-volume").count() == 1
+    assert "escolhido por você" in page.get_by_test_id("exam-mode-why").inner_text()
+    # abdome: saem da barra, e dá para abrir pelo menu
+    page.get_by_test_id("exam-mode-abdome").click()
+    page.wait_for_timeout(500)
+    assert page.evaluate(janela) == [400, 50]
+    assert page.get_by_test_id("open-cavity-volume").count() == 0
+    page.get_by_test_id("exam-mode-extra-cavidade").click()
+    assert page.get_by_test_id("cavity-panel").count() == 1
+    page.keyboard.press("Escape")
+    page.get_by_test_id("cavity-close").click()
+    _open_sculpt(page)
+    assert page.get_by_test_id("sculpt-lungs").count() == 0
+    assert page.get_by_test_id("sculpt-heart").count() == 0
     assert not session.errors, session.errors

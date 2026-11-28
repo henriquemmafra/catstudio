@@ -233,6 +233,7 @@ import CropRotate from '@/src/catstudio/components/CropRotate.vue';
 import LayerBar from '@/src/catstudio/components/LayerBar.vue';
 import { useWindowDrag } from '@/src/catstudio/useWindowDrag';
 import { useHandoff } from '@/src/catstudio/director/useHandoff';
+import { useModeLook } from '@/src/catstudio/useExamMode';
 import { displayPresetName } from '@/src/catstudio/paletteStore';
 import PhotoBadge from '@/src/catstudio/components/PhotoBadge.vue';
 import SpinGif from '@/src/catstudio/components/SpinGif.vue';
@@ -358,6 +359,7 @@ onVTKEvent(currentImageData, 'onModified', () => {
 
 // CatStudio: "Editar no 3D" do diretor de arte
 useHandoff(vtkView, viewId, currentImageID);
+useModeLook(viewId, currentImageID);
 
 // CatStudio: os dois botões do mouse juntos mexem na janela do 3D
 const windowDrag = useWindowDrag(rootEl, viewId, currentImageID);

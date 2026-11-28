@@ -19,6 +19,9 @@ import LayoutSelector from '@/src/components/LayoutSelector.vue';
 import { valveMode } from '@/src/catstudio/valveMode';
 import { directorMode } from '@/src/catstudio/director/mode';
 import { cavityMode } from '@/src/catstudio/cavity/state';
+import { useCurrentImage } from '@/src/composables/useCurrentImage';
+import ExamModeButton from '@/src/catstudio/components/ExamModeButton.vue';
+import { showsTool, type ModeTool } from '@/src/catstudio/examMode';
 import { closeExam } from '@/src/catstudio/closeExam';
 
 interface Props {
@@ -26,6 +29,44 @@ interface Props {
 }
 
 defineProps<Props>();
+
+// CatStudio: valvas e volume de cavidade ficam na barra só nos modos em que
+// fazem sentido; nos outros, no menu do modo ("Mais ferramentas")
+const MODE_TOOLS: {
+  id: ModeTool;
+  title: string;
+  icon: string;
+  testid: string;
+  open: () => void;
+}[] = [
+  {
+    id: 'valvas',
+    title: 'Valvas (holograma e 3D)',
+    icon: 'mdi-heart-pulse',
+    testid: 'open-valve-mode',
+    open: () => {
+      valveMode.open = true;
+    },
+  },
+  {
+    id: 'cavidade',
+    title: 'Volume de cavidade (VE, VD)',
+    icon: 'mdi-heart-half-full',
+    testid: 'open-cavity-volume',
+    open: () => {
+      cavityMode.open = !cavityMode.open;
+    },
+  },
+];
+const { currentImageID: modeImageID } = useCurrentImage('global');
+const shownTools = computed(() =>
+  MODE_TOOLS.filter((tool) => showsTool(modeImageID.value, tool.id))
+);
+const extraTools = computed(() =>
+  MODE_TOOLS.filter((tool) => !showsTool(modeImageID.value, tool.id))
+);
+const openModeTool = (id: string) =>
+  MODE_TOOLS.find((tool) => tool.id === id)?.open();
 
 function useSaveControls() {
   const remoteSaveStateStore = useRemoteSaveStateStore();
@@ -168,21 +209,19 @@ const { count: msgCount, badgeColor: msgBadgeColor } = useMessageBubble();
       </v-card>
     </v-menu>
     <controls-strip-tools v-if="hasData" />
-    <control-button
+    <exam-mode-button
       v-if="hasData"
-      size="40"
-      icon="mdi-heart-pulse"
-      name="Valvas (holograma e 3D)"
-      data-testid="open-valve-mode"
-      @click="valveMode.open = true"
+      :extras="extraTools"
+      @extra="openModeTool"
     />
     <control-button
-      v-if="hasData"
+      v-for="tool in shownTools"
+      :key="tool.id"
       size="40"
-      icon="mdi-heart-half-full"
-      name="Volume de cavidade (VE, VD)"
-      data-testid="open-cavity-volume"
-      @click="cavityMode.open = !cavityMode.open"
+      :icon="tool.icon"
+      :name="tool.title"
+      :data-testid="tool.testid"
+      @click="openModeTool(tool.id)"
     />
     <control-button
       v-if="hasData"

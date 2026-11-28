@@ -40,6 +40,7 @@ import useVolumeColoringStore from '@/src/store/view-configs/volume-coloring';
 import SculptBone from '@/src/catstudio/components/SculptBone.vue';
 import SculptOptions from '@/src/catstudio/components/SculptOptions.vue';
 import SculptOrgans from '@/src/catstudio/components/SculptOrgans.vue';
+import { showsTool } from '@/src/catstudio/examMode';
 import {
   keepHeart,
   keepLungs,
@@ -432,7 +433,13 @@ function restore() {
       </label>
       <sculpt-highlight :image-id="imageId" />
 
-      <sculpt-organs :busy="busy" @lungs="lungsOnlyNow" @heart="heartOnlyNow" />
+      <sculpt-organs
+        :busy="busy"
+        :lungs="showsTool(imageId, 'pulmoes')"
+        :heart="showsTool(imageId, 'coracao')"
+        @lungs="lungsOnlyNow"
+        @heart="heartOnlyNow"
+      />
 
       <div class="sculpt-section">Limpeza</div>
       <div class="sculpt-row">

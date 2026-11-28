@@ -91,6 +91,14 @@ uma cópia em que o que foi apagado vira ar.
 (com os vasos e brônquios de dentro) e põe as cores de pulmão do diretor de
 arte. Desfazer traz o resto de volta.
 
+**Modo do exame** (tórax, angio, coronária/cardíaco, abdome, livre): botão na
+barra lateral. Ao abrir, o programa detecta o tipo pela descrição do estudo e
+da série (lidas no navegador) e, se elas não dizem nada, pelos pulmões; o menu
+mostra por que escolheu. O modo põe a janela dos cortes (pulmão, angio, partes
+moles), as cores do 3D e deixa à mão só as ferramentas do caso; o resto fica
+em "Mais ferramentas" no mesmo menu. Dá para trocar o modo, detectar de novo
+ou desligar a detecção. Janela nova no menu de janelas: Angio (L 200, W 800).
+
 **Volume de cavidade (VE, VD)**: botão do coração meio cheio na barra
 lateral. Ponha o cruzamento dos três cortes dentro da cavidade contrastada,
 risque com a régua o plano valvar e a via de saída (cada régua vira uma parede

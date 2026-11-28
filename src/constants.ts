@@ -216,6 +216,10 @@ export const WLPresetsCT = {
     width: 1000,
     level: -426,
   },
+  Angio: {
+    width: 800,
+    level: 200,
+  },
 };
 
 export const OBLIQUE_OUTLINE_COLORS: Record<string, RGBColor> = {

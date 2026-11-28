@@ -1,15 +1,16 @@
 <script setup lang="ts">
 /**
  * CatStudio — atalhos de órgão das Ferramentas 3D: deixar só os pulmões ou
- * só o coração.
+ * só o coração (cada um aparece nos modos de exame em que faz sentido).
  */
-defineProps<{ busy: boolean }>();
+defineProps<{ busy: boolean; lungs: boolean; heart: boolean }>();
 defineEmits<{ lungs: []; heart: [] }>();
 </script>
 
 <template>
   <div class="organs">
     <v-btn
+      v-if="lungs"
       size="small"
       variant="tonal"
       prepend-icon="mdi-lungs"
@@ -21,6 +22,7 @@ defineEmits<{ lungs: []; heart: [] }>();
       Só pulmões
     </v-btn>
     <v-btn
+      v-if="heart"
       size="small"
       variant="tonal"
       prepend-icon="mdi-heart-outline"
