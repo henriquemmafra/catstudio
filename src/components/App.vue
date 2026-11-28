@@ -42,6 +42,7 @@
         <series-triage />
         <valve-mode />
         <director-mode />
+        <cavity-volume />
       </v-app>
       <persistent-overlay
         :disabled="!dragHover"
@@ -103,6 +104,7 @@ import { useGlRecovery } from '@/src/catstudio/glRecovery';
 import SeriesTriage from '@/src/catstudio/components/SeriesTriage.vue';
 import ValveMode from '@/src/catstudio/components/ValveMode.vue';
 import DirectorMode from '@/src/catstudio/components/DirectorMode.vue';
+import CavityVolume from '@/src/catstudio/components/CavityVolume.vue';
 import { readLaunchParams } from '@/src/utils/urlParams';
 
 export default defineComponent({
@@ -118,6 +120,7 @@ export default defineComponent({
     SeriesTriage,
     ValveMode,
     DirectorMode,
+    CavityVolume,
     WelcomePage,
     AppBar,
     VtkRenderWindowParent,

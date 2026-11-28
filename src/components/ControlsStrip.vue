@@ -18,6 +18,7 @@ import { ConnectionState, useServerStore } from '@/src/store/server';
 import LayoutSelector from '@/src/components/LayoutSelector.vue';
 import { valveMode } from '@/src/catstudio/valveMode';
 import { directorMode } from '@/src/catstudio/director/mode';
+import { cavityMode } from '@/src/catstudio/cavity/state';
 import { closeExam } from '@/src/catstudio/closeExam';
 
 interface Props {
@@ -174,6 +175,14 @@ const { count: msgCount, badgeColor: msgBadgeColor } = useMessageBubble();
       name="Valvas (holograma e 3D)"
       data-testid="open-valve-mode"
       @click="valveMode.open = true"
+    />
+    <control-button
+      v-if="hasData"
+      size="40"
+      icon="mdi-heart-half-full"
+      name="Volume de cavidade (VE, VD)"
+      data-testid="open-cavity-volume"
+      @click="cavityMode.open = !cavityMode.open"
     />
     <control-button
       v-if="hasData"

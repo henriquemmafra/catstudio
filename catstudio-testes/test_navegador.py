@@ -1648,3 +1648,38 @@ def test_so_coracao_responde(session):
         "() => /cora/.test(document.querySelector('[data-testid=sculpt-status]')?.textContent ?? '')",
         timeout=60000)
     assert not session.errors, session.errors
+
+
+def test_volume_de_cavidade_pelo_cruzamento_dos_cortes(session):
+    """Volume de cavidade: com os três cortes cruzando dentro da esfera densa
+    do fantoma (raio 12 mm, 7,2 mL), "Medir VE" dá esse volume, pinta a
+    cavidade nos cortes e "apagar" limpa. Fora do contraste, avisa."""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    _views(page)
+    page.get_by_test_id("open-cavity-volume").click()
+    assert page.get_by_test_id("cavity-panel").count() == 1
+    # cruzamento dos cortes no ar do pulmão: não há contraste ali
+    mira = "(ponto) => window.__catstudio.crossAt(ponto)"
+    page.evaluate(mira, [70, 0, -60])
+    page.get_by_test_id("cavity-measure-VE").click()
+    page.wait_for_selector("[data-testid=cavity-message]")
+    assert "dentro da cavidade" in page.get_by_test_id("cavity-message").inner_text()
+    # agora dentro da esfera
+    page.evaluate(mira, [90, -20, 40])
+    page.wait_for_timeout(500)
+    antes = _coloridos_2d(page, "vermelho")
+    page.get_by_test_id("cavity-measure-VE").click()
+    page.wait_for_selector("[data-testid=cavity-value-VE]")
+    texto = page.get_by_test_id("cavity-value-VE").inner_text()
+    ml = float(re.search(r"VE: ([\d,]+) mL", texto).group(1).replace(",", "."))
+    assert 5.5 < ml < 9.0, texto
+    assert _coloridos_2d(page, "vermelho") > antes + 100
+    # com altura e peso, sai o índice
+    page.get_by_test_id("cavity-height").fill("170")
+    page.get_by_test_id("cavity-weight").fill("70")
+    assert "mL/m²" in page.get_by_test_id("cavity-value-VE").inner_text()
+    page.get_by_test_id("cavity-clear-VE").click()
+    assert page.get_by_test_id("cavity-value-VE").count() == 0
+    assert _coloridos_2d(page, "vermelho") <= antes + 20
+    assert not session.errors, session.errors

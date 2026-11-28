@@ -1,13 +1,15 @@
 /**
  * CatStudio — estado interno exposto para os testes ponta a ponta
- * (`window.__catstudio`). Só leitura de estado da interface; nenhum dado do
- * exame passa por aqui.
+ * (`window.__catstudio`). Estado da interface e a posição da mira; nenhum dado
+ * do exame passa por aqui.
  */
 import {
   guardStatus,
   LADDER,
   FRAME_BUDGET_MS,
 } from '@/src/catstudio/renderGuard';
+import { useCrosshairsToolStore } from '@/src/store/tools/crosshairs';
+import { useViewStore } from '@/src/store/views';
 import { slabFor } from '@/src/catstudio/slab';
 import { performanceSettings } from '@/src/catstudio/performance';
 import { layerViews, sculptSummary } from '@/src/catstudio/sculpt/state';
@@ -22,6 +24,14 @@ function loseGlContext(): boolean {
   return !!extension;
 }
 
+/** Põe o cruzamento dos cortes num ponto (mm), como a ferramenta de mira. */
+function crossAt(point: [number, number, number]) {
+  const crosshairs = useCrosshairsToolStore();
+  useViewStore()
+    .getAllViews()
+    .forEach((view) => crosshairs.setPosition(point, view.id));
+}
+
 export function installDebugHook() {
   (globalThis as any).__catstudio = {
     guard: (viewID: string) => ({ ...guardStatus(viewID) }),
@@ -31,6 +41,7 @@ export function installDebugHook() {
     layers: (imageID: string) =>
       JSON.parse(JSON.stringify(layerViews[imageID] ?? null)),
     loseGlContext,
+    crossAt,
     LADDER,
     FRAME_BUDGET_MS,
   };

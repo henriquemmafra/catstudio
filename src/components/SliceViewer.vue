@@ -91,6 +91,11 @@
             :image-id="currentImageID"
             :axis="viewAxis"
           ></sculpt-slice-overlay>
+          <cavity-slice-overlay
+            :view-id="viewId"
+            :image-id="currentImageID"
+            :axis="viewAxis"
+          ></cavity-slice-overlay>
           <vtk-segmentation-slice-representation
             v-for="maskId in segmentMaskIds"
             :key="`seg-${maskId}`"
@@ -200,6 +205,7 @@ import { ViewInfo2D } from '@/src/types/views';
 import { get2DViewingVectors } from '@/src/utils/getViewingVectors';
 import SlabSlice from '@/src/catstudio/components/SlabSlice.vue';
 import SculptSliceOverlay from '@/src/catstudio/components/SculptSliceOverlay.vue';
+import CavitySliceOverlay from '@/src/catstudio/components/CavitySliceOverlay.vue';
 import SlabControl from '@/src/catstudio/components/SlabControl.vue';
 import { slabFor } from '@/src/catstudio/slab';
 

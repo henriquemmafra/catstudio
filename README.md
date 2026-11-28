@@ -91,6 +91,15 @@ uma cópia em que o que foi apagado vira ar.
 (com os vasos e brônquios de dentro) e põe as cores de pulmão do diretor de
 arte. Desfazer traz o resto de volta.
 
+**Volume de cavidade (VE, VD)**: botão do coração meio cheio na barra
+lateral. Ponha o cruzamento dos três cortes dentro da cavidade contrastada,
+risque com a régua o plano valvar e a via de saída (cada régua vira uma parede
+que o crescimento não atravessa) e clique em "Medir VE" ou "Medir VD". Sai o
+volume em mL (e por m², com altura e peso), a cavidade fica pintada nos cortes
+para conferir e o limiar tem um controle. Conta só o sangue acima do limiar
+(papilares e trabéculas ficam de fora), na resolução cheia do exame, e é o
+volume da fase aberta. Passou de 700 mL, avisa que vazou.
+
 **Só coração**: ao lado de "Só pulmões". Procura o maior bloco de partes
 moles entre os dois pulmões; vem junto a raiz dos grandes vasos e, embaixo,
 pode vir uma fatia do fígado. É ponto de partida para acertar com a borracha.
