@@ -99,6 +99,13 @@ moles), as cores do 3D e deixa à mão só as ferramentas do caso; o resto fica
 em "Mais ferramentas" no mesmo menu. Dá para trocar o modo, detectar de novo
 ou desligar a detecção. Janela nova no menu de janelas: Angio (L 200, W 800).
 
+**Tórax e abdome no mesmo exame**: quando o volume desce bem além da base
+dos pulmões, o programa pergunta ao abrir: Tórax, Abdome ou Aorta total. Tórax
+e Abdome põem o modo, recortam o 3D na região (a caixa de corte, que dá para
+ajustar) e levam o corte axial para o meio dela; Aorta total deixa o exame
+inteiro no modo angio. A mesma escolha fica no menu do modo do exame. Os
+cortes 2D não são recortados.
+
 **Volume de cavidade (VE, VD)**: botão do coração meio cheio na barra
 lateral. Ponha o cruzamento dos três cortes dentro da cavidade contrastada,
 risque com a régua o plano valvar e a via de saída (cada régua vira uma parede

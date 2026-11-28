@@ -1730,3 +1730,47 @@ def test_modo_do_exame_detecta_e_arruma(session):
     assert page.get_by_test_id("sculpt-lungs").count() == 0
     assert page.get_by_test_id("sculpt-heart").count() == 0
     assert not session.errors, session.errors
+
+
+def test_torax_e_abdome_juntos_oferece_o_recorte(session):
+    """Exame combinado: aparece a pergunta "tórax, abdome ou aorta total?".
+    Tórax recorta o 3D na faixa do tórax e põe a janela de pulmão; "Aorta
+    total", no menu do modo, desfaz o recorte e põe o modo angio. (O fantoma
+    é só tórax: o teste diz ao programa que há abdome abaixo.)"""
+    page = session.page
+    session.open_files(files_of("ax_main"))
+    _views(page)
+    img = f"[...{PINIA}._s.get('image-cache').imageIds][0]"
+    corte = f"() => {{ const c = {PINIA}._s.get('crop').croppingByImageID[{img}]; return c ? [...c.Axial] : null; }}"
+    page.get_by_test_id("exam-mode").click()
+    page.get_by_test_id("exam-mode-detect").click()
+    page.wait_for_timeout(800)
+    # tórax sozinho: não pergunta nada
+    assert page.get_by_test_id("region-chooser").count() == 0
+    regioes = page.evaluate(f"() => {{ const r = window.__catstudio.examModes[{img}].regions; return [r.combined, r.torax, r.whole]; }}")
+    assert regioes[0] is False
+    inteiro = page.evaluate(corte)
+    # faz de conta que metade de baixo do volume é abdome
+    z0, z1 = regioes[2]
+    meio = (z0 + z1) / 2
+    page.evaluate(f"""([a, b, m]) => {{ const s = window.__catstudio.examModes[{img}];
+        s.regions = {{ combined: true, torax: [m, b], abdome: [a, m], whole: [a, b] }}; s.asked = false; }}""",
+                  [z0, z1, meio])
+    page.keyboard.press("Escape")
+    page.get_by_test_id("region-chooser").wait_for(timeout=5000)
+    page.get_by_test_id("region-torax").click()
+    page.wait_for_timeout(500)
+    assert page.get_by_test_id("region-chooser").count() == 0
+    recorte = page.evaluate(corte)
+    assert recorte is not None and recorte != inteiro
+    faixa = abs(recorte[1] - recorte[0])
+    total = page.evaluate(f"() => {PINIA}._s.get('image-cache').getVtkImageData({img}).getDimensions()[2]")
+    assert 0.35 * total < faixa < 0.65 * total, (recorte, total)
+    # aorta total, pelo menu: exame inteiro de novo
+    page.get_by_test_id("exam-mode").click()
+    page.get_by_test_id("exam-mode-region-aorta").click()
+    page.wait_for_timeout(500)
+    depois = page.evaluate(corte)
+    assert depois is None or abs(depois[1] - depois[0]) > 0.95 * (total - 1)
+    assert "Angio" in page.get_by_test_id("exam-mode-why").inner_text()
+    assert not session.errors, session.errors

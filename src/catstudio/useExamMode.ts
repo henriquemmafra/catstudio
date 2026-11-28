@@ -16,6 +16,17 @@ import {
   chestOf,
   lungShare,
 } from '@/src/catstudio/sculpt/chestImage';
+import { useCropStore } from '@/src/store/tools/crop';
+import { useViewStore } from '@/src/store/views';
+import useViewSliceStore from '@/src/store/view-configs/slicing';
+import { volume2DViewsOfImage } from '@/src/core/views/effectiveView';
+import { vec3 } from 'gl-matrix';
+import {
+  lungHeights,
+  regionsFromLungs,
+  type RegionChoice,
+  type Regions,
+} from './examRegions';
 import {
   MODES,
   detectMode,
@@ -25,24 +36,80 @@ import {
   type Detection,
 } from './examMode';
 
-function hasLungs(imageID: string): boolean {
+/** As regiões do exame pelos pulmões; undefined se não é tórax. */
+function regionsOf(imageID: string): Regions | undefined {
   const image = useImageCacheStore().getVtkImageData(imageID);
-  if (!image) return false;
+  if (!image) return undefined;
   const { vol, lungs, found } = chestOf(image);
-  return found && lungShare(vol, lungs) >= CHEST_LUNG_SHARE;
+  if (!found || lungShare(vol, lungs) < CHEST_LUNG_SHARE) return undefined;
+  const heights = lungHeights(lungs);
+  const bounds = image.getBounds();
+  return heights
+    ? regionsFromLungs(heights, [bounds[4], bounds[5]])
+    : undefined;
 }
 
 /** O que a detecção diz deste exame. */
 export function detectFor(imageID: string): Detection {
   const dicom = useDICOMStore();
   const study = dicom.studyInfo[dicom.volumeStudy[imageID]];
-  return detectMode({
+  const regions = regionsOf(imageID);
+  const detection = detectMode({
     texts: [
       study?.StudyDescription ?? '',
       dicom.volumeInfo[imageID]?.SeriesDescription ?? '',
     ],
-    hasLungs: () => hasLungs(imageID),
+    hasLungs: () => !!regions,
   });
+  return { ...detection, regions };
+}
+
+/** Fatia (índice no eixo axial do exame) de uma altura em mm. */
+function sliceAt(imageID: string, z: number): number | null {
+  const cache = useImageCacheStore();
+  const image = cache.getVtkImageData(imageID);
+  const metadata = cache.getImageMetadata(imageID);
+  if (!image || !metadata) return null;
+  const [x0, x1, y0, y1] = image.getBounds();
+  const index = vec3.transformMat4(
+    vec3.create(),
+    [(x0 + x1) / 2, (y0 + y1) / 2, z],
+    metadata.worldToIndex
+  );
+  return index[metadata.lpsOrientation.Axial];
+}
+
+/**
+ * Resposta à pergunta "tórax, abdome ou aorta total?": põe o modo, recorta o
+ * 3D na região e leva o corte axial para o meio dela.
+ */
+export function chooseRegion(imageID: string, choice: RegionChoice) {
+  const regions = examModes[imageID]?.regions;
+  const mode = choice === 'aorta' ? 'angio' : choice;
+  setMode(imageID, { mode, why: 'escolhido por você', regions }, false);
+  const crop = useCropStore();
+  if (choice === 'aorta' || !regions) {
+    crop.resetCropping(imageID);
+    return;
+  }
+  const [low, high] = regions[choice].map((z) => sliceAt(imageID, z));
+  if (low == null || high == null) return;
+  const range: [number, number] = [Math.min(low, high), Math.max(low, high)];
+  crop.setCroppingForAxis(imageID, 'Axial', range);
+  const slices = useViewSliceStore();
+  volume2DViewsOfImage(imageID, useViewStore().getAllViews())
+    .filter(({ axis }) => axis === 'Axial')
+    .forEach(({ viewId }) =>
+      slices.updateConfig(viewId, imageID, {
+        slice: Math.round((range[0] + range[1]) / 2),
+      })
+    );
+}
+
+/** Fecha a pergunta sem escolher. */
+export function dismissRegions(imageID: string) {
+  const state = examModes[imageID];
+  if (state) state.asked = true;
 }
 
 /** Ao abrir um exame, escolhe o modo dele (se a detecção estiver ligada). */

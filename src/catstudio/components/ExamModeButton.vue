@@ -16,7 +16,12 @@ import {
   setMode,
   type ExamMode,
 } from '@/src/catstudio/examMode';
-import { detectFor, useModeDetection } from '@/src/catstudio/useExamMode';
+import { REGION_CHOICES } from '@/src/catstudio/examRegions';
+import {
+  chooseRegion,
+  detectFor,
+  useModeDetection,
+} from '@/src/catstudio/useExamMode';
 
 defineProps<{
   /** ferramentas fora do modo atual, para o fim do menu */
@@ -92,6 +97,22 @@ function detectNow() {
           />
           detectar sozinho ao abrir um exame
         </label>
+        <template v-if="state?.regions?.combined && currentImageID">
+          <div class="mode-title mt-2">Tórax e abdome no mesmo exame</div>
+          <div class="mode-regions">
+            <v-btn
+              v-for="choice in REGION_CHOICES"
+              :key="choice.id"
+              size="x-small"
+              variant="tonal"
+              :title="choice.hint"
+              :data-testid="`exam-mode-region-${choice.id}`"
+              @click="chooseRegion(currentImageID, choice.id)"
+            >
+              {{ choice.title }}
+            </v-btn>
+          </div>
+        </template>
         <template v-if="extras.length">
           <div class="mode-title mt-2">Mais ferramentas</div>
           <v-list density="compact" class="pa-0">
@@ -126,6 +147,10 @@ function detectNow() {
   font-size: 12px;
   opacity: 0.8;
   margin-bottom: 6px;
+}
+.mode-regions {
+  display: flex;
+  gap: 4px;
 }
 .mode-check {
   display: flex;

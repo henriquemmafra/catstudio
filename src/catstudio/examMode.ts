@@ -8,6 +8,7 @@
  * navegador) e, se elas não dizem nada, se o exame tem pulmões.
  */
 import { reactive } from 'vue';
+import type { Regions } from './examRegions';
 
 export type ExamMode = 'torax' | 'angio' | 'cardio' | 'abdome' | 'livre';
 
@@ -100,6 +101,8 @@ export interface Detection {
   mode: ExamMode;
   /** por que este modo, para mostrar a quem usa */
   why: string;
+  /** onde ficam o tórax e o abdome, quando o exame tem pulmões */
+  regions?: Regions;
 }
 
 /** Decide o modo pelas descrições e, sem elas, pelos pulmões. */
@@ -122,6 +125,8 @@ export interface ModeState extends Detection {
   auto: boolean;
   /** sobe a cada escolha: as vistas aplicam a janela e as cores de novo */
   stamp: number;
+  /** a pergunta "tórax, abdome ou aorta total?" já foi respondida ou fechada */
+  asked: boolean;
 }
 
 /** Modo de cada exame aberto. */
@@ -153,7 +158,15 @@ let stamps = 0;
 
 export function setMode(imageID: string, detection: Detection, auto: boolean) {
   stamps += 1;
-  examModes[imageID] = { ...detection, auto, stamp: stamps };
+  const previous = examModes[imageID];
+  examModes[imageID] = {
+    ...detection,
+    regions: detection.regions ?? previous?.regions,
+    auto,
+    stamp: stamps,
+    // quem escolhe o modo à mão já decidiu; detectar de novo pergunta de novo
+    asked: !auto,
+  };
 }
 
 /** O modo do exame (livre enquanto nada foi escolhido). */

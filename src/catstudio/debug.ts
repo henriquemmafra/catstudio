@@ -10,6 +10,7 @@ import {
 } from '@/src/catstudio/renderGuard';
 import { useCrosshairsToolStore } from '@/src/store/tools/crosshairs';
 import { useViewStore } from '@/src/store/views';
+import { examModes } from '@/src/catstudio/examMode';
 import { slabFor } from '@/src/catstudio/slab';
 import { performanceSettings } from '@/src/catstudio/performance';
 import { layerViews, sculptSummary } from '@/src/catstudio/sculpt/state';
@@ -42,6 +43,7 @@ export function installDebugHook() {
       JSON.parse(JSON.stringify(layerViews[imageID] ?? null)),
     loseGlContext,
     crossAt,
+    examModes,
     LADDER,
     FRAME_BUDGET_MS,
   };
